@@ -28,8 +28,22 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
+// ピン
+class Pin {
+  final Marker marker;
+  Pin(LatLng latlng) :
+    marker = Marker(
+      point: latlng,
+      width: 60,
+      height: 60,
+      alignment: Alignment.topCenter,
+      child: const Icon(Icons.location_pin, size: 60, color: Colors.red),
+    );
+}
+
 class _MyHomePageState extends State<MyHomePage> {
   late final MapController _mapController;
+  final List<Pin> _pins = [];
 
   @override
   void initState() {
@@ -55,10 +69,17 @@ class _MyHomePageState extends State<MyHomePage> {
       // マップ
       body: FlutterMap(
         mapController: _mapController,
-        options: const MapOptions(
-          initialCenter: LatLng(51.509364, -0.128928),
+        options: MapOptions(
+          initialCenter: const LatLng(35.6895, 139.6917),
           initialZoom: 9.2,
-          interactionOptions: InteractionOptions(flags: InteractiveFlag.all),
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.all,
+          ),
+          onTap: (tapPosition, latlng) {
+            setState(() {
+              _pins.add(Pin(latlng));
+            });
+          },
         ),
         children: [
           TileLayer(
@@ -66,17 +87,7 @@ class _MyHomePageState extends State<MyHomePage> {
             userAgentPackageName: 'dev.fleaflet.flutter_map.example',
           ),
           // ピン
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: LatLng(35.65961, 139.68303),
-                width: 60,
-                height: 60,
-                alignment: Alignment.centerLeft,
-                child: Icon(Icons.location_pin, size: 60, color: Colors.red),
-              ),
-            ],
-          ),
+          MarkerLayer(markers: _pins.map((p) => p.marker).toList()),
           // クレジット
           RichAttributionWidget(
             alignment: AttributionAlignment.bottomLeft,
@@ -112,12 +123,6 @@ class _MyHomePageState extends State<MyHomePage> {
             child: const Icon(Icons.remove),
           ),
           const SizedBox(height: 8),
-          FloatingActionButton(
-            onPressed: () =>
-                _mapController.move(const LatLng(35.6895, 139.6917), 10),
-            tooltip: 'Move to Tokyo',
-            child: const Icon(Icons.location_city),
-          ),
         ],
       ),
     );
