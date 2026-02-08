@@ -30,15 +30,54 @@ class MyHomePage extends StatefulWidget {
 
 // ピン
 class Pin {
-  final Marker marker;
-  Pin(LatLng latlng) :
-    marker = Marker(
+  final LatLng latlng;
+  String? name;
+  
+  Pin(this.latlng, {this.name});
+  
+  Marker getMarker(VoidCallback onTap) {
+    return Marker(
       point: latlng,
-      width: 60,
-      height: 60,
-      alignment: Alignment.topCenter,
-      child: const Icon(Icons.location_pin, size: 60, color: Colors.red),
+      width: 80,
+      height: 100,
+      alignment: Alignment.center,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 30,
+              child: name != null && name!.isNotEmpty
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(4),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black26, blurRadius: 2),
+                        ],
+                      ),
+                      child: Text(
+                        name!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            const Icon(Icons.location_pin, size: 60, color: Colors.red),
+          ],
+        ),
+      ),
     );
+  }
 }
 
 class _MyHomePageState extends State<MyHomePage> {
@@ -55,6 +94,46 @@ class _MyHomePageState extends State<MyHomePage> {
   void dispose() {
     _mapController.dispose();
     super.dispose();
+  }
+
+  // ピン名を入力するダイアログを表示
+  void _showPinNameDialog(int pinIndex) {
+    final TextEditingController controller =
+        TextEditingController(text: _pins[pinIndex].name ?? '');
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('ピンに名前をつける'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              hintText: 'ピンの名前を入力',
+              border: OutlineInputBorder(),
+            ),
+            maxLength: 30,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('キャンセル'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _pins[pinIndex].name = controller.text;
+                });
+                Navigator.of(context).pop();
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -87,7 +166,14 @@ class _MyHomePageState extends State<MyHomePage> {
             userAgentPackageName: 'dev.fleaflet.flutter_map.example',
           ),
           // ピン
-          MarkerLayer(markers: _pins.map((p) => p.marker).toList()),
+          MarkerLayer(
+            markers: List.generate(
+              _pins.length,
+              (index) => _pins[index].getMarker(
+                () => _showPinNameDialog(index),
+              ),
+            ),
+          ),
           // クレジット
           RichAttributionWidget(
             alignment: AttributionAlignment.bottomLeft,
