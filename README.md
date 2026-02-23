@@ -19,14 +19,17 @@ cd .. && flutter pub get
 ```bash
 cd backend
 
-# 開発サーバー起動 (port 8787)
+# 1. ローカル DB を起動
+bunx prisma dev
+
+# 2. 表示された接続 URL を .dev.vars に設定
+bun run db:url "prisma+postgres://..."
+
+# 3. スキーマを DB に反映 (初回 or スキーマ変更時のみ)
+bun run db:push
+
+# 4. 開発サーバー起動 (port 8787)
 bun run dev
-
-# スキーマを DB に反映
-bunx drizzle-kit push
-
-# マイグレーション生成
-bunx drizzle-kit generate
 ```
 
 ### Flutter
