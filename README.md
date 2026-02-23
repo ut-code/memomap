@@ -1,16 +1,58 @@
 # memomap
 
-A new Flutter project.
+## セットアップ
 
-## Getting Started
+```bash
+# 依存関係をインストール
+cd backend && bun install
+cd .. && flutter pub get
+```
 
-This project is a starting point for a Flutter application.
+## 環境変数
 
-A few resources to get you started if this is your first Flutter project:
+`.env` `.dev.vars` を設定
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## 開発
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### Backend
+
+```bash
+cd backend
+
+# 開発サーバー起動 (port 8787)
+bun run dev
+
+# スキーマを DB に反映
+bunx drizzle-kit push
+
+# マイグレーション生成
+bunx drizzle-kit generate
+```
+
+### Flutter
+
+```bash
+# Web
+flutter run -d chrome --web-port=3000
+
+# Android
+flutter run -d android
+
+# 静的解析
+flutter analyze
+```
+
+## 型生成
+
+Backend → Flutter の型共有:
+
+```bash
+# 1. Backend を起動 (/doc エンドポイントが必要)
+cd backend && bun run dev
+
+# 2. OpenAPI から Dart モデルを生成
+flutter pub run swagger_parser
+
+# 3. JSON シリアライザを再生成
+flutter pub run build_runner build --delete-conflicting-outputs
+```
