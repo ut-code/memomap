@@ -45,3 +45,7 @@ app.*.map.json
 /android/app/release
 
 .direnv
+.env
+.dev.vars
+node_modules
+.wrangler

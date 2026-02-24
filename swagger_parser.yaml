@@ -1,0 +1,23 @@
+swagger_parser:
+  schema_url: http://localhost:8787/doc
+  output_directory: lib/api
+  language: dart
+
+  # Client generation
+  client_postfix: Client
+  root_client: true
+  root_client_name: ApiClient
+
+  # Retrofit + Dio
+  rest_client: true
+
+  # JSON serialization
+  json_serializer: json_serializable
+
+  # Naming
+  models_file_name: models
+  enums_prefix: true
+
+  # Formatting
+  put_clients_in_folder: true
+  put_in_folder: true

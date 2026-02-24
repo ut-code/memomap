@@ -79,6 +79,10 @@
               export ANDROID_SDK_ROOT="${androidSdk}/libexec/android-sdk"
               export ANDROID_HOME=$ANDROID_SDK_ROOT
 
+              # Fix TLS certificate issues for workerd (Cloudflare Workers)
+              export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+              export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
               flutter config --android-sdk $ANDROID_SDK_ROOT
 
               flutter config --no-analytics
