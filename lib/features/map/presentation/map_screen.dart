@@ -6,6 +6,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
 import 'package:memomap/features/map/providers/pin_provider.dart';
+import 'package:memomap/features/map/providers/drawing_provider.dart';
+import 'package:memomap/features/map/presentation/widgets/drawing_canvas.dart';
+import 'package:memomap/features/map/presentation/widgets/controls.dart';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -46,6 +49,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final isAuthenticated = ref.watch(isAuthenticatedProvider);
     final user = ref.watch(currentUserProvider);
     final pinsAsync = ref.watch(pinsProvider);
+    final drawingState = ref.watch(drawingProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -64,70 +68,107 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             ),
           IconButton(
             icon: Icon(isAuthenticated ? Icons.person : Icons.login),
-            onPressed: () => context.push(isAuthenticated ? '/profile' : '/login'),
+            onPressed: () =>
+                context.push(isAuthenticated ? '/profile' : '/login'),
             tooltip: isAuthenticated ? 'Profile' : 'Login',
           ),
         ],
       ),
-      body: FlutterMap(
-        mapController: _mapController,
-        options: MapOptions(
-          initialCenter: const LatLng(35.6895, 139.6917),
-          initialZoom: 9.2,
-          interactionOptions: const InteractionOptions(
-            flags: InteractiveFlag.all & ~InteractiveFlag.doubleTapZoom,
-          ),
-          onTap: (tapPosition, latlng) {
-            ref.read(pinsProvider.notifier).addPin(latlng);
-          },
-        ),
+      body: Column(
         children: [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'dev.fleaflet.flutter_map.example',
-          ),
-          MarkerLayer(
-            markers: pinsAsync.when(
-              data: _buildMarkers,
-              loading: () => [],
-              error: (_, _) => [],
+          Expanded(
+            child: Stack(
+              children: [
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: const LatLng(35.6895, 139.6917),
+                    initialZoom: 9.2,
+                    interactionOptions: InteractionOptions(
+                      flags: drawingState.isDrawingMode
+                          ? InteractiveFlag.none
+                          : InteractiveFlag.all &
+                                ~InteractiveFlag.doubleTapZoom,
+                    ),
+                    onTap: (tapPosition, latlng) {
+                      if (!drawingState.isDrawingMode) {
+                        ref.read(pinsProvider.notifier).addPin(latlng);
+                      }
+                    },
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'dev.fleaflet.flutter_map.example',
+                    ),
+                    PolylineLayer(
+                      polylines: drawingState.paths
+                          .map(
+                            (path) => Polyline(
+                              points: path.points,
+                              color: path.color,
+                              strokeWidth: path.strokeWidth,
+                            ),
+                          )
+                          .toList(),
+                    ),
+                    MarkerLayer(
+                      markers: pinsAsync.when(
+                        data: _buildMarkers,
+                        loading: () => [],
+                        error: (_, _) => [],
+                      ),
+                    ),
+                    RichAttributionWidget(
+                      alignment: AttributionAlignment.bottomLeft,
+                      attributions: [
+                        TextSourceAttribution(
+                          'OpenStreetMap contributors',
+                          onTap: () => launchUrl(
+                            Uri.parse('https://openstreetmap.org/copyright'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                IgnorePointer(
+                  ignoring: !drawingState.isDrawingMode,
+                  child: DrawingCanvas(mapController: _mapController),
+                ),
+                Positioned(
+                  right: 16,
+                  bottom: 16,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FloatingActionButton(
+                        heroTag: 'zoom_in',
+                        onPressed: () => _mapController.move(
+                          _mapController.camera.center,
+                          _mapController.camera.zoom + 1,
+                        ),
+                        tooltip: 'Zoom in',
+                        child: const Icon(Icons.add),
+                      ),
+                      const SizedBox(height: 8),
+                      FloatingActionButton(
+                        heroTag: 'zoom_out',
+                        onPressed: () => _mapController.move(
+                          _mapController.camera.center,
+                          _mapController.camera.zoom - 1,
+                        ),
+                        tooltip: 'Zoom out',
+                        child: const Icon(Icons.remove),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          RichAttributionWidget(
-            alignment: AttributionAlignment.bottomLeft,
-            attributions: [
-              TextSourceAttribution(
-                'OpenStreetMap contributors',
-                onTap: () =>
-                    launchUrl(Uri.parse('https://openstreetmap.org/copyright')),
-              ),
-            ],
-          ),
-        ],
-      ),
-      floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            heroTag: 'zoom_in',
-            onPressed: () => _mapController.move(
-              _mapController.camera.center,
-              _mapController.camera.zoom + 1,
-            ),
-            tooltip: 'Zoom in',
-            child: const Icon(Icons.add),
-          ),
-          const SizedBox(height: 8),
-          FloatingActionButton(
-            heroTag: 'zoom_out',
-            onPressed: () => _mapController.move(
-              _mapController.camera.center,
-              _mapController.camera.zoom - 1,
-            ),
-            tooltip: 'Zoom out',
-            child: const Icon(Icons.remove),
-          ),
-          const SizedBox(height: 8),
+          const Controls(),
         ],
       ),
     );
