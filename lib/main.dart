@@ -32,8 +32,9 @@ class MyHomePage extends StatefulWidget {
 class Pin {
   final LatLng latlng;
   String? name;
+  String? memo;
   
-  Pin(this.latlng, {this.name});
+  Pin(this.latlng, {this.name, this.memo});
   
   Marker getMarker(VoidCallback onTap) {
     return Marker(
@@ -80,6 +81,85 @@ class Pin {
   }
 }
 
+// メモ作成ページ
+class MemoPage extends StatefulWidget {
+  final Pin pin;
+  const MemoPage({required this.pin, super.key});
+
+  @override
+  State<MemoPage> createState() => _MemoPageState();
+}
+
+class _MemoPageState extends State<MemoPage> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.pin.memo ?? '');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _saveMemo() {
+    final text = _controller.text.trim();
+    widget.pin.memo = text.isEmpty ? null : text;
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasMemo = widget.pin.memo != null && widget.pin.memo!.isNotEmpty;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(hasMemo ? 'メモを編集' : 'メモを追加'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _controller,
+              maxLines: null,
+              decoration: const InputDecoration(
+                hintText: 'ここにメモを入力',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (widget.pin.memo != null && widget.pin.memo!.isNotEmpty)
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        widget.pin.memo = null;
+                        _controller.clear();
+                      });
+                      Navigator.of(context).pop();
+                    },
+                    child: const Text('削除'),
+                  ),
+                ElevatedButton(
+                  onPressed: _saveMemo,
+                  child: const Text('保存'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 class _MyHomePageState extends State<MyHomePage> {
   late final MapController _mapController;
   final List<Pin> _pins = [];
@@ -129,6 +209,22 @@ class _MyHomePageState extends State<MyHomePage> {
                 Navigator.of(context).pop();
               },
               child: const Text('保存'),
+            ),
+            // 新しいメモページへ遷移するボタン
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => MemoPage(pin: _pins[pinIndex]),
+                  ),
+                );
+              },
+              child: Text(
+                _pins[pinIndex].memo == null || _pins[pinIndex].memo!.isEmpty
+                    ? 'メモを追加'
+                    : 'メモを編集',
+              ),
             ),
           ],
         );
