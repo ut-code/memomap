@@ -8,6 +8,7 @@ import 'package:memomap/api/models/post_api_pins_batch_response.dart';
 import 'package:memomap/api/models/post_api_pins_response.dart';
 import 'package:memomap/config/backend_config.dart';
 import 'package:memomap/features/auth/data/token_storage.dart';
+import 'package:memomap/features/map/data/pin_repository_base.dart';
 import 'package:uuid/uuid.dart';
 
 PinData _createPinData({
@@ -78,9 +79,33 @@ class PinData {
       isLocal: true,
     );
   }
+
+  factory PinData.fromJson(Map<String, dynamic> json) {
+    return PinData(
+      id: json['id'] as String,
+      userId: json['userId'] as String?,
+      position: LatLng(
+        (json['latitude'] as num).toDouble(),
+        (json['longitude'] as num).toDouble(),
+      ),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      isLocal: json['isLocal'] as bool? ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'userId': userId,
+      'latitude': position.latitude,
+      'longitude': position.longitude,
+      'createdAt': createdAt.toUtc().toIso8601String(),
+      'isLocal': isLocal,
+    };
+  }
 }
 
-class PinRepository {
+class PinRepository implements PinRepositoryBase {
   PinRepository._internal(this._api);
 
   final ApiClient _api;
@@ -99,6 +124,7 @@ class PinRepository {
     return token != null;
   }
 
+  @override
   Future<List<PinData>> getPins() async {
     if (!await _isAuthenticated()) return [];
 
@@ -106,6 +132,7 @@ class PinRepository {
     return response.map((r) => r.toPinData()).toList();
   }
 
+  @override
   Future<PinData?> addPin(LatLng position) async {
     if (!await _isAuthenticated()) return null;
 
@@ -119,12 +146,14 @@ class PinRepository {
     return response.toPinData();
   }
 
+  @override
   Future<void> deletePin(String id) async {
     if (!await _isAuthenticated()) return;
 
     await _api.pins.deleteApiPinsById(id: id);
   }
 
+  @override
   Future<List<PinData>> uploadLocalPins(List<PinData> localPins) async {
     if (!await _isAuthenticated() || localPins.isEmpty) return [];
 

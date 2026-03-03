@@ -22,8 +22,8 @@ cd backend
 # 1. ローカル DB を起動
 bunx prisma dev
 
-# 2. 表示された接続 URL を .dev.vars に設定
-bun run db:url "prisma+postgres://..."
+# 2. "print tcp urls" で表示された DATABASE_URL を .dev.vars に設定（初回のみ）
+#    .dev.vars.sample をコピーして編集
 
 # 3. スキーマを DB に反映 (初回 or スキーマ変更時のみ)
 bun run db:push
