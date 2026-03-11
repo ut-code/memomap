@@ -49,7 +49,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final isAuthenticated = ref.watch(isAuthenticatedProvider);
     final user = ref.watch(currentUserProvider);
     final pinsAsync = ref.watch(pinsProvider);
-    final drawingState = ref.watch(drawingProvider);
+    final drawingStateAsync = ref.watch(drawingProvider);
+    final drawingState = drawingStateAsync.valueOrNull;
+    final isDrawingMode = drawingState?.isDrawingMode ?? false;
+    final paths = drawingState?.paths ?? [];
 
     return Scaffold(
       appBar: AppBar(
@@ -85,13 +88,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                     initialCenter: const LatLng(35.6895, 139.6917),
                     initialZoom: 9.2,
                     interactionOptions: InteractionOptions(
-                      flags: drawingState.isDrawingMode
+                      flags: isDrawingMode
                           ? InteractiveFlag.none
                           : InteractiveFlag.all &
                                 ~InteractiveFlag.doubleTapZoom,
                     ),
                     onTap: (tapPosition, latlng) {
-                      if (!drawingState.isDrawingMode) {
+                      if (!isDrawingMode) {
                         ref.read(pinsProvider.notifier).addPin(latlng);
                       }
                     },
@@ -103,7 +106,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       userAgentPackageName: 'dev.fleaflet.flutter_map.example',
                     ),
                     PolylineLayer(
-                      polylines: drawingState.paths
+                      polylines: paths
                           .map(
                             (path) => Polyline(
                               points: path.points,
@@ -134,7 +137,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   ],
                 ),
                 IgnorePointer(
-                  ignoring: !drawingState.isDrawingMode,
+                  ignoring: !isDrawingMode,
                   child: DrawingCanvas(mapController: _mapController),
                 ),
                 Positioned(

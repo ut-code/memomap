@@ -8,8 +8,14 @@ class Controls extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final drawingState = ref.watch(drawingProvider);
+    final drawingStateAsync = ref.watch(drawingProvider);
+    final drawingState = drawingStateAsync.valueOrNull;
     final drawingNotifier = ref.read(drawingProvider.notifier);
+
+    final isDrawingMode = drawingState?.isDrawingMode ?? false;
+    final isEraserMode = drawingState?.isEraserMode ?? false;
+    final selectedColor = drawingState?.selectedColor ?? Colors.red;
+    final strokeWidth = drawingState?.strokeWidth ?? 3.0;
 
     return Row(
       children: [
@@ -24,7 +30,7 @@ class Controls extends ConsumerWidget {
                 Icon(
                   Icons.pin_drop,
                   size: 60,
-                  color: !drawingState.isDrawingMode ? Colors.red : Colors.grey,
+                  color: !isDrawingMode ? Colors.red : Colors.grey,
                 ),
               ],
             ),
@@ -45,7 +51,7 @@ class Controls extends ConsumerWidget {
                 ),
               );
             },
-            child: drawingState.isDrawingMode
+            child: isDrawingMode
                 ? Container(
                     key: const ValueKey('expanded_controls'),
                     padding: const EdgeInsets.only(bottom: 24, top: 12),
@@ -65,13 +71,13 @@ class Controls extends ConsumerWidget {
                             IconButton(
                               icon: Icon(
                                 MyFlutterApp.eraser_1,
-                                color: drawingState.isEraserMode
+                                color: isEraserMode
                                     ? Colors.blue
                                     : Colors.black,
                               ),
                               tooltip: '消しゴム',
                               onPressed: () => drawingNotifier.setEraserMode(
-                                !drawingState.isEraserMode,
+                                !isEraserMode,
                               ),
                             ),
                           ],
@@ -97,9 +103,8 @@ class Controls extends ConsumerWidget {
                                         (entry) => _ColorCircle(
                                           index: entry.key,
                                           isSelected:
-                                              !drawingState.isEraserMode &&
-                                              drawingState.selectedColor ==
-                                                  entry.value,
+                                              !isEraserMode &&
+                                              selectedColor == entry.value,
                                           color: entry.value,
                                           onTap: () => drawingNotifier
                                               .selectColor(entry.value),
@@ -109,10 +114,10 @@ class Controls extends ConsumerWidget {
                             ),
                             const SizedBox(height: 10),
                             _StrokeWidthSlider(
-                              color: drawingState.isEraserMode
+                              color: isEraserMode
                                   ? Colors.grey
-                                  : drawingState.selectedColor,
-                              width: drawingState.strokeWidth,
+                                  : selectedColor,
+                              width: strokeWidth,
                               setWidth: (newWidth) =>
                                   drawingNotifier.changeStrokeWidth(newWidth),
                             ),

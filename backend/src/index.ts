@@ -11,7 +11,13 @@ import {
 } from "hono-openapi";
 import postgres from "postgres";
 import { type AuthEnv, createAuth } from "./auth";
-import { pins } from "./db/schema";
+import { drawings, pins } from "./db/schema";
+import {
+	BatchCreateDrawingsSchema,
+	CreateDrawingSchema,
+	DrawingSchema,
+	DrawingsArraySchema,
+} from "./schemas/drawing";
 import {
 	BatchCreatePinsSchema,
 	CreatePinSchema,
@@ -341,6 +347,203 @@ app.post(
 		} catch (error) {
 			console.error("Failed to batch insert pins:", error);
 			return c.json({ error: "Failed to add pins" }, 500);
+		}
+	},
+);
+
+// Drawings API
+
+app.get(
+	"/api/drawings",
+	describeRoute({
+		tags: ["drawings"],
+		summary: "Get all drawings for current user",
+		responses: {
+			200: {
+				description: "List of drawings",
+				content: {
+					"application/json": { schema: resolver(DrawingsArraySchema) },
+				},
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	async (c) => {
+		const userId = c.get("userId");
+
+		try {
+			const data = await withDb(c.env.DATABASE_URL, (db) =>
+				db
+					.select()
+					.from(drawings)
+					.where(eq(drawings.userId, userId))
+					.orderBy(desc(drawings.createdAt)),
+			);
+
+			return c.json(data);
+		} catch (error) {
+			console.error("Failed to get drawings:", error);
+			return c.json({ error: "Failed to get drawings" }, 500);
+		}
+	},
+);
+
+app.post(
+	"/api/drawings",
+	describeRoute({
+		tags: ["drawings"],
+		summary: "Create a new drawing",
+		responses: {
+			201: {
+				description: "Drawing created",
+				content: { "application/json": { schema: resolver(DrawingSchema) } },
+			},
+			400: {
+				description: "Invalid request",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	validator("json", CreateDrawingSchema),
+	async (c) => {
+		const userId = c.get("userId");
+		const body = c.req.valid("json");
+
+		try {
+			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+				db
+					.insert(drawings)
+					.values({
+						userId,
+						mapId: body.mapId ?? null,
+						points: body.points,
+						color: body.color,
+						strokeWidth: body.strokeWidth,
+					})
+					.returning(),
+			);
+
+			return c.json(data, 201);
+		} catch (error) {
+			console.error("Failed to add drawing:", error);
+			return c.json({ error: "Failed to add drawing" }, 500);
+		}
+	},
+);
+
+app.delete(
+	"/api/drawings/:id",
+	describeRoute({
+		tags: ["drawings"],
+		summary: "Delete a drawing",
+		responses: {
+			204: {
+				description: "Drawing deleted",
+			},
+			400: {
+				description: "Invalid drawing ID",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	async (c) => {
+		const userId = c.get("userId");
+		const drawingId = c.req.param("id");
+
+		if (!drawingId || !/^[0-9a-f-]{36}$/i.test(drawingId)) {
+			return c.json({ error: "Invalid drawing ID" }, 400);
+		}
+
+		try {
+			await withDb(c.env.DATABASE_URL, (db) =>
+				db
+					.delete(drawings)
+					.where(and(eq(drawings.id, drawingId), eq(drawings.userId, userId))),
+			);
+
+			return c.body(null, 204);
+		} catch (error) {
+			console.error("Failed to delete drawing:", error);
+			return c.json({ error: "Failed to delete drawing" }, 500);
+		}
+	},
+);
+
+app.post(
+	"/api/drawings/batch",
+	describeRoute({
+		tags: ["drawings"],
+		summary: "Create multiple drawings at once",
+		responses: {
+			201: {
+				description: "Drawings created",
+				content: {
+					"application/json": { schema: resolver(DrawingsArraySchema) },
+				},
+			},
+			400: {
+				description: "Invalid request",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	validator("json", BatchCreateDrawingsSchema),
+	async (c) => {
+		const userId = c.get("userId");
+		const body = c.req.valid("json");
+
+		const drawingsToInsert = body.drawings.map((drawing) => ({
+			userId,
+			mapId: drawing.mapId ?? null,
+			points: drawing.points,
+			color: drawing.color,
+			strokeWidth: drawing.strokeWidth,
+		}));
+
+		try {
+			const data = await withDb(c.env.DATABASE_URL, (db) =>
+				db.insert(drawings).values(drawingsToInsert).returning(),
+			);
+
+			return c.json(data, 201);
+		} catch (error) {
+			console.error("Failed to batch insert drawings:", error);
+			return c.json({ error: "Failed to add drawings" }, 500);
 		}
 	},
 );

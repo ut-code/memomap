@@ -1,6 +1,7 @@
 import {
 	boolean,
 	doublePrecision,
+	jsonb,
 	pgTable,
 	text,
 	timestamp,
@@ -80,3 +81,18 @@ export const pins = pgTable("pins", {
 
 export type Pin = typeof pins.$inferSelect;
 export type NewPin = typeof pins.$inferInsert;
+
+export const drawings = pgTable("drawings", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	mapId: uuid("map_id"),
+	points: jsonb("points").notNull(),
+	color: text("color").notNull(),
+	strokeWidth: doublePrecision("stroke_width").notNull(),
+	createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type Drawing = typeof drawings.$inferSelect;
+export type NewDrawing = typeof drawings.$inferInsert;

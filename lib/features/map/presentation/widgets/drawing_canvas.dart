@@ -19,7 +19,8 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
   Offset? _eraserPosition;
 
   void _handleEraser(Offset localPosition) {
-    final drawingState = ref.read(drawingProvider);
+    final drawingState = ref.read(drawingProvider).valueOrNull;
+    if (drawingState == null) return;
     final drawingNotifier = ref.read(drawingProvider.notifier);
 
     final latLng = widget.mapController.camera.screenOffsetToLatLng(
@@ -27,7 +28,6 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
     );
     final distance = const Distance();
 
-    // 消しゴムの半径（メートル換算）。strokeWidthを基準にする
     final metersPerPixel =
         156543.03392 *
         math.cos(latLng.latitude * math.pi / 180) /
@@ -60,7 +60,6 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
         }
       }
 
-      // 最後のセグメントを追加
       if (currentSegment.length > 1) {
         newPaths.add(
           DrawingPath(
@@ -70,29 +69,35 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
           ),
         );
       } else if (pathModified && currentSegment.length <= 1) {
-        // セグメントが短くなりすぎた場合は追加しない
+        // Segment too short after modification, skip
       } else if (!pathModified) {
-        // 修正がなかった場合は元のパスを維持
         newPaths.add(path);
       }
     }
 
     if (changed) {
-      drawingNotifier.setPaths(newPaths);
+      drawingNotifier.updateEraserPaths(newPaths);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final drawingState = ref.watch(drawingProvider);
+    final drawingStateAsync = ref.watch(drawingProvider);
+    final drawingState = drawingStateAsync.valueOrNull;
     final drawingNotifier = ref.read(drawingProvider.notifier);
+
+    final isDrawingMode = drawingState?.isDrawingMode ?? false;
+    final isEraserMode = drawingState?.isEraserMode ?? false;
+    final selectedColor = drawingState?.selectedColor ?? Colors.red;
+    final strokeWidth = drawingState?.strokeWidth ?? 3.0;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: (details) {
-        if (!drawingState.isDrawingMode) return;
+        if (!isDrawingMode) return;
 
-        if (drawingState.isEraserMode) {
+        if (isEraserMode) {
+          drawingNotifier.startEraserOperation();
           setState(() {
             _eraserPosition = details.localPosition;
           });
@@ -106,15 +111,15 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
         setState(() {
           _currentPath = DrawingPath(
             points: [latLng],
-            color: drawingState.selectedColor,
-            strokeWidth: drawingState.strokeWidth,
+            color: selectedColor,
+            strokeWidth: strokeWidth,
           );
         });
       },
       onPanUpdate: (details) {
-        if (!drawingState.isDrawingMode) return;
+        if (!isDrawingMode) return;
 
-        if (drawingState.isEraserMode) {
+        if (isEraserMode) {
           setState(() {
             _eraserPosition = details.localPosition;
           });
@@ -133,7 +138,8 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
         });
       },
       onPanEnd: (details) {
-        if (drawingState.isEraserMode) {
+        if (isEraserMode) {
+          drawingNotifier.finishEraserOperation();
           setState(() {
             _eraserPosition = null;
           });
@@ -159,7 +165,7 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
               size: Size.infinite,
               painter: _EraserPainter(
                 _eraserPosition!,
-                drawingState.strokeWidth * 2,
+                strokeWidth * 2,
               ),
             ),
         ],
