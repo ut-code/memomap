@@ -59,14 +59,32 @@ class Controls extends ConsumerWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // UndoButtonBar
                         OverflowBar(
                           alignment: MainAxisAlignment.center,
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.undo_rounded),
+                              icon: Icon(
+                                Icons.undo_rounded,
+                                color: drawingState?.canUndo == true
+                                    ? Colors.black
+                                    : Colors.grey,
+                              ),
                               tooltip: '元に戻す',
-                              onPressed: () => drawingNotifier.undo(),
+                              onPressed: drawingState?.canUndo == true
+                                  ? () => drawingNotifier.undo()
+                                  : null,
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.redo_rounded,
+                                color: drawingState?.canRedo == true
+                                    ? Colors.black
+                                    : Colors.grey,
+                              ),
+                              tooltip: 'やり直す',
+                              onPressed: drawingState?.canRedo == true
+                                  ? () => drawingNotifier.redo()
+                                  : null,
                             ),
                             IconButton(
                               icon: Icon(

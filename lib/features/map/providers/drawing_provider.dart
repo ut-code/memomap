@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -51,6 +53,9 @@ class DrawingState {
   /// Stack of previous drawing states for undo functionality
   final List<List<DrawingData>> undoStack;
 
+  /// Stack of undone states for redo functionality
+  final List<List<DrawingData>> redoStack;
+
   DrawingState({
     required this.drawingDataList,
     required this.selectedColor,
@@ -60,6 +65,7 @@ class DrawingState {
     this.eraserTempPaths,
     this.eraserOriginalDrawings,
     this.undoStack = const [],
+    this.redoStack = const [],
   });
 
   /// Returns true if eraser operation is currently in progress
@@ -71,6 +77,9 @@ class DrawingState {
 
   /// Returns true if there are items in the undo stack
   bool get canUndo => undoStack.isNotEmpty;
+
+  /// Returns true if there are items in the redo stack
+  bool get canRedo => redoStack.isNotEmpty;
 
   /// Push current drawingDataList to undo stack (call before modifying)
   DrawingState pushUndo() {
@@ -90,6 +99,29 @@ class DrawingState {
     return (copyWith(undoStack: newStack), restored);
   }
 
+  /// Push current drawingDataList to redo stack (call before undo restores)
+  DrawingState pushRedo() {
+    return copyWith(
+      redoStack: [...redoStack, drawingDataList],
+    );
+  }
+
+  /// Pop from redo stack and return (newState, restoredDrawings)
+  /// Returns (newState, null) if stack is empty
+  (DrawingState, List<DrawingData>?) popRedo() {
+    if (redoStack.isEmpty) {
+      return (this, null);
+    }
+    final newStack = List<List<DrawingData>>.from(redoStack);
+    final restored = newStack.removeLast();
+    return (copyWith(redoStack: newStack), restored);
+  }
+
+  /// Clear the redo stack (call when new operation is performed)
+  DrawingState clearRedoStack() {
+    return copyWith(redoStack: []);
+  }
+
   DrawingState copyWith({
     List<DrawingData>? drawingDataList,
     Color? selectedColor,
@@ -99,6 +131,7 @@ class DrawingState {
     List<DrawingPath>? Function()? eraserTempPaths,
     List<DrawingData>? Function()? eraserOriginalDrawings,
     List<List<DrawingData>>? undoStack,
+    List<List<DrawingData>>? redoStack,
   }) {
     return DrawingState(
       drawingDataList: drawingDataList ?? this.drawingDataList,
@@ -112,7 +145,28 @@ class DrawingState {
           ? eraserOriginalDrawings()
           : this.eraserOriginalDrawings,
       undoStack: undoStack ?? this.undoStack,
+      redoStack: redoStack ?? this.redoStack,
     );
+  }
+}
+
+/// Simple async lock to serialize operations
+class _AsyncLock {
+  Future<void>? _lastOperation;
+
+  Future<T> synchronized<T>(Future<T> Function() operation) async {
+    final previous = _lastOperation;
+    final completer = Completer<void>();
+    _lastOperation = completer.future;
+
+    try {
+      if (previous != null) {
+        await previous;
+      }
+      return await operation();
+    } finally {
+      completer.complete();
+    }
   }
 }
 
@@ -122,6 +176,8 @@ final drawingProvider =
 });
 
 class DrawingNotifier extends AsyncNotifier<DrawingState> {
+  final _lock = _AsyncLock();
+
   @override
   Future<DrawingState> build() async {
     ref.listen(sessionProvider, (prev, next) {
@@ -197,42 +253,43 @@ class DrawingNotifier extends AsyncNotifier<DrawingState> {
   }
 
   Future<void> addPath(DrawingPath path) async {
-    final current = state.valueOrNull;
-    if (current == null) return;
+    return _lock.synchronized(() async {
+      final current = state.valueOrNull;
+      if (current == null) return;
 
-    final isAuthenticated = ref.read(isAuthenticatedProvider);
+      final isAuthenticated = ref.read(isAuthenticatedProvider);
 
-    // Push current state to undo stack before adding
-    final withUndo = current.pushUndo();
-    final optimisticDrawing = DrawingData.local(path);
-    state = AsyncValue.data(
-      withUndo.copyWith(
-        drawingDataList: [...withUndo.drawingDataList, optimisticDrawing],
-      ),
-    );
-
-    try {
-      final syncService = await ref.read(drawingSyncServiceProvider.future);
-      final realDrawing = await syncService.addDrawing(
-        path: path,
-        isAuthenticated: isAuthenticated,
+      final withUndo = current.pushUndo().clearRedoStack();
+      final optimisticDrawing = DrawingData.local(path);
+      state = AsyncValue.data(
+        withUndo.copyWith(
+          drawingDataList: [...withUndo.drawingDataList, optimisticDrawing],
+        ),
       );
 
-      final updated = state.valueOrNull;
-      if (updated != null) {
-        state = AsyncValue.data(
-          updated.copyWith(
-            drawingDataList: updated.drawingDataList
-                .map((d) => d.id == optimisticDrawing.id ? realDrawing : d)
-                .toList(),
-          ),
+      try {
+        final syncService = await ref.read(drawingSyncServiceProvider.future);
+        final realDrawing = await syncService.addDrawing(
+          path: path,
+          isAuthenticated: isAuthenticated,
         );
+
+        final updated = state.valueOrNull;
+        if (updated != null) {
+          state = AsyncValue.data(
+            updated.copyWith(
+              drawingDataList: updated.drawingDataList
+                  .map((d) => d.id == optimisticDrawing.id ? realDrawing : d)
+                  .toList(),
+            ),
+          );
+        }
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('Failed to add drawing: $e\n$st');
+        }
       }
-    } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('Failed to add drawing: $e\n$st');
-      }
-    }
+    });
   }
 
   // ============ Eraser Operation Methods ============
@@ -262,53 +319,54 @@ class DrawingNotifier extends AsyncNotifier<DrawingState> {
 
   /// Call when eraser operation ends (on pan end) - persists changes
   Future<void> finishEraserOperation() async {
-    final current = state.valueOrNull;
-    if (current == null) return;
+    return _lock.synchronized(() async {
+      final current = state.valueOrNull;
+      if (current == null) return;
 
-    final originalDrawings = current.eraserOriginalDrawings;
-    final tempPaths = current.eraserTempPaths;
+      final originalDrawings = current.eraserOriginalDrawings;
+      final tempPaths = current.eraserTempPaths;
 
-    // If no eraser operation was active, nothing to do
-    if (originalDrawings == null || tempPaths == null) return;
+      // If no eraser operation was active, nothing to do
+      if (originalDrawings == null || tempPaths == null) return;
 
-    // Push original state to undo stack before eraser changes
-    final withUndo = current.pushUndo();
+      final withUndo = current.pushUndo().clearRedoStack();
 
-    // Update drawingDataList with temp paths AND clear eraser state atomically
-    // This prevents UI from showing old drawings during persistence
-    final tempDrawingDataList =
-        tempPaths.map((p) => DrawingData.local(p)).toList();
-    state = AsyncValue.data(
-      withUndo.copyWith(
-        drawingDataList: tempDrawingDataList,
-        eraserOriginalDrawings: () => null,
-        eraserTempPaths: () => null,
-      ),
-    );
-
-    // Persist changes in background
-    try {
-      final isAuthenticated = ref.read(isAuthenticatedProvider);
-      final syncService = await ref.read(drawingSyncServiceProvider.future);
-
-      final newDrawingDataList = await syncService.replaceDrawings(
-        oldDrawings: originalDrawings,
-        newPaths: tempPaths,
-        isAuthenticated: isAuthenticated,
+      // Update drawingDataList with temp paths AND clear eraser state atomically
+      // This prevents UI from showing old drawings during persistence
+      final tempDrawingDataList =
+          tempPaths.map((p) => DrawingData.local(p)).toList();
+      state = AsyncValue.data(
+        withUndo.copyWith(
+          drawingDataList: tempDrawingDataList,
+          eraserOriginalDrawings: () => null,
+          eraserTempPaths: () => null,
+        ),
       );
 
-      final updated = state.valueOrNull;
-      if (updated != null) {
-        state = AsyncValue.data(
-          updated.copyWith(drawingDataList: newDrawingDataList),
+      // Persist changes in background
+      try {
+        final isAuthenticated = ref.read(isAuthenticatedProvider);
+        final syncService = await ref.read(drawingSyncServiceProvider.future);
+
+        final newDrawingDataList = await syncService.replaceDrawings(
+          oldDrawings: originalDrawings,
+          newPaths: tempPaths,
+          isAuthenticated: isAuthenticated,
         );
+
+        final updated = state.valueOrNull;
+        if (updated != null) {
+          state = AsyncValue.data(
+            updated.copyWith(drawingDataList: newDrawingDataList),
+          );
+        }
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('Failed to persist eraser changes: $e\n$st');
+        }
+        // On error, tempDrawingDataList is already set, so no action needed
       }
-    } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('Failed to persist eraser changes: $e\n$st');
-      }
-      // On error, tempDrawingDataList is already set, so no action needed
-    }
+    });
   }
 
   Future<void> removePathAt(int index) async {
@@ -337,43 +395,89 @@ class DrawingNotifier extends AsyncNotifier<DrawingState> {
   }
 
   Future<void> undo() async {
-    final current = state.valueOrNull;
-    if (current == null) return;
-    // Skip undo during eraser operation to prevent inconsistency
-    if (current.isEraserOperationActive) return;
-    if (!current.canUndo) return;
+    return _lock.synchronized(() async {
+      final current = state.valueOrNull;
+      if (current == null) return;
+      // Skip undo during eraser operation to prevent inconsistency
+      if (current.isEraserOperationActive) return;
+      if (!current.canUndo) return;
 
-    final (newState, restoredDrawings) = current.popUndo();
-    if (restoredDrawings == null) return;
+      // Push current to redo stack, then pop from undo stack
+      final withRedo = current.pushRedo();
+      final (newState, restoredDrawings) = withRedo.popUndo();
+      if (restoredDrawings == null) return;
 
-    // Update UI immediately
-    state = AsyncValue.data(
-      newState.copyWith(drawingDataList: restoredDrawings),
-    );
-
-    // Persist the restored state
-    try {
-      final isAuthenticated = ref.read(isAuthenticatedProvider);
-      final syncService = await ref.read(drawingSyncServiceProvider.future);
-
-      // Replace current drawings with restored ones
-      final persistedDrawings = await syncService.replaceDrawings(
-        oldDrawings: current.drawingDataList,
-        newPaths: restoredDrawings.map((d) => d.path).toList(),
-        isAuthenticated: isAuthenticated,
+      // Update UI immediately
+      state = AsyncValue.data(
+        newState.copyWith(drawingDataList: restoredDrawings),
       );
 
-      final updated = state.valueOrNull;
-      if (updated != null) {
-        state = AsyncValue.data(
-          updated.copyWith(drawingDataList: persistedDrawings),
+      // Persist the restored state
+      try {
+        final isAuthenticated = ref.read(isAuthenticatedProvider);
+        final syncService = await ref.read(drawingSyncServiceProvider.future);
+
+        final persistedDrawings = await syncService.replaceDrawings(
+          oldDrawings: current.drawingDataList,
+          newDrawings: restoredDrawings,
+          isAuthenticated: isAuthenticated,
         );
+
+        final updated = state.valueOrNull;
+        if (updated != null) {
+          state = AsyncValue.data(
+            updated.copyWith(drawingDataList: persistedDrawings),
+          );
+        }
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('Failed to persist undo: $e\n$st');
+        }
       }
-    } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('Failed to persist undo: $e\n$st');
+    });
+  }
+
+  Future<void> redo() async {
+    return _lock.synchronized(() async {
+      final current = state.valueOrNull;
+      if (current == null) return;
+      // Skip redo during eraser operation to prevent inconsistency
+      if (current.isEraserOperationActive) return;
+      if (!current.canRedo) return;
+
+      // Push current to undo stack, then pop from redo stack
+      final withUndo = current.pushUndo();
+      final (newState, restoredDrawings) = withUndo.popRedo();
+      if (restoredDrawings == null) return;
+
+      // Update UI immediately
+      state = AsyncValue.data(
+        newState.copyWith(drawingDataList: restoredDrawings),
+      );
+
+      // Persist the restored state
+      try {
+        final isAuthenticated = ref.read(isAuthenticatedProvider);
+        final syncService = await ref.read(drawingSyncServiceProvider.future);
+
+        final persistedDrawings = await syncService.replaceDrawings(
+          oldDrawings: current.drawingDataList,
+          newDrawings: restoredDrawings,
+          isAuthenticated: isAuthenticated,
+        );
+
+        final updated = state.valueOrNull;
+        if (updated != null) {
+          state = AsyncValue.data(
+            updated.copyWith(drawingDataList: persistedDrawings),
+          );
+        }
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('Failed to persist redo: $e\n$st');
+        }
       }
-    }
+    });
   }
 
   void selectColor(Color color) {

@@ -628,6 +628,199 @@ void main() {
       verifyNever(() => mockRepository.deleteDrawing(any()));
       verifyNever(() => mockRepository.addDrawing(any()));
     });
+
+    test('preserves drawings by ID even with different path objects', () async {
+      // Simulates undo after server sync: same ID but different path objects
+      final pathB1 = DrawingPath(
+        points: [LatLng(35.0, 139.0)],
+        color: const Color(0xFFFF0000),
+        strokeWidth: 3.0,
+      );
+      final pathB2 = DrawingPath(
+        points: [LatLng(35.0, 139.0)],
+        color: const Color(0xFFFF0000),
+        strokeWidth: 3.0,
+      );
+
+      final drawingB_old = DrawingData(
+        id: 'b',
+        userId: 'user-123',
+        mapId: null,
+        path: pathB1,
+        createdAt: DateTime.utc(2024, 1, 15),
+      );
+      final drawingB_new = DrawingData(
+        id: 'b',
+        userId: 'user-123',
+        mapId: null,
+        path: pathB2,
+        createdAt: DateTime.utc(2024, 1, 15),
+      );
+
+      final result = await service.replaceDrawings(
+        oldDrawings: [drawingB_old],
+        newDrawings: [drawingB_new],
+        isAuthenticated: true,
+      );
+
+      // Same ID: should NOT add or delete
+      verifyNever(() => mockRepository.addDrawing(any()));
+      verifyNever(() => mockRepository.deleteDrawing(any()));
+      expect(result.length, 1);
+      expect(result[0].id, 'b');
+    });
+
+    test('undo after eraser: deletes split drawings and re-adds original', () async {
+      // Before eraser: drawingA
+      // After eraser: splitA1, splitA2 (drawingA deleted)
+      // Undo: restore drawingA (needs re-add), delete splitA1, splitA2
+      final pathA = DrawingPath(
+        points: [LatLng(35.0, 139.0), LatLng(35.5, 139.5)],
+        color: const Color(0xFFFF0000),
+        strokeWidth: 3.0,
+      );
+      final pathA1 = DrawingPath(
+        points: [LatLng(35.0, 139.0)],
+        color: const Color(0xFFFF0000),
+        strokeWidth: 3.0,
+      );
+      final pathA2 = DrawingPath(
+        points: [LatLng(35.5, 139.5)],
+        color: const Color(0xFFFF0000),
+        strokeWidth: 3.0,
+      );
+
+      final drawingA = DrawingData(
+        id: 'a',
+        userId: 'user-123',
+        mapId: null,
+        path: pathA,
+        createdAt: DateTime.utc(2024, 1, 15),
+      );
+      final splitA1 = DrawingData(
+        id: 'split-1',
+        userId: 'user-123',
+        mapId: null,
+        path: pathA1,
+        createdAt: DateTime.utc(2024, 1, 15),
+      );
+      final splitA2 = DrawingData(
+        id: 'split-2',
+        userId: 'user-123',
+        mapId: null,
+        path: pathA2,
+        createdAt: DateTime.utc(2024, 1, 15),
+      );
+
+      final serverDrawingA = DrawingData(
+        id: 'server-a-new',
+        userId: 'user-123',
+        mapId: null,
+        path: pathA,
+        createdAt: DateTime.utc(2024, 1, 15),
+      );
+
+      when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+      when(() => mockRepository.deleteDrawing('split-1'))
+          .thenAnswer((_) async {});
+      when(() => mockRepository.deleteDrawing('split-2'))
+          .thenAnswer((_) async {});
+      when(() => mockRepository.addDrawing(pathA))
+          .thenAnswer((_) async => serverDrawingA);
+      when(() => mockStorage.getCachedDrawings())
+          .thenAnswer((_) async => [splitA1, splitA2]);
+      when(() => mockStorage.setCachedDrawings(any()))
+          .thenAnswer((_) async {});
+
+      final result = await service.replaceDrawings(
+        oldDrawings: [splitA1, splitA2],
+        newDrawings: [drawingA],
+        isAuthenticated: true,
+      );
+
+      // Split drawings should be deleted
+      verify(() => mockRepository.deleteDrawing('split-1')).called(1);
+      verify(() => mockRepository.deleteDrawing('split-2')).called(1);
+      // Original should be re-added (it was deleted during eraser)
+      verify(() => mockRepository.addDrawing(pathA)).called(1);
+      expect(result.length, 1);
+      expect(result[0].id, 'server-a-new');
+    });
+
+    test('eraser with newDrawings: preserves unchanged, adds splits, deletes original', () async {
+      final pathA = DrawingPath(
+        points: [LatLng(35.0, 139.0), LatLng(35.5, 139.5)],
+        color: const Color(0xFFFF0000),
+        strokeWidth: 3.0,
+      );
+      final pathB = DrawingPath(
+        points: [LatLng(36.0, 140.0)],
+        color: const Color(0xFF00FF00),
+        strokeWidth: 3.0,
+      );
+      final pathA1 = DrawingPath(
+        points: [LatLng(35.0, 139.0)],
+        color: const Color(0xFFFF0000),
+        strokeWidth: 3.0,
+      );
+
+      final drawingA = DrawingData(
+        id: 'a',
+        userId: 'user-123',
+        mapId: null,
+        path: pathA,
+        createdAt: DateTime.utc(2024, 1, 15),
+      );
+      final drawingB = DrawingData(
+        id: 'b',
+        userId: 'user-123',
+        mapId: null,
+        path: pathB,
+        createdAt: DateTime.utc(2024, 1, 15),
+      );
+      // Split drawing has local ID (new)
+      final splitA1 = DrawingData(
+        id: 'local-split-1',
+        userId: null,
+        mapId: null,
+        path: pathA1,
+        createdAt: DateTime.utc(2024, 1, 15),
+        isLocal: true,
+      );
+
+      final serverSplitA1 = DrawingData(
+        id: 'server-split-1',
+        userId: 'user-123',
+        mapId: null,
+        path: pathA1,
+        createdAt: DateTime.utc(2024, 1, 15),
+      );
+
+      when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+      when(() => mockRepository.deleteDrawing('a')).thenAnswer((_) async {});
+      when(() => mockRepository.addDrawing(pathA1))
+          .thenAnswer((_) async => serverSplitA1);
+      when(() => mockStorage.getCachedDrawings())
+          .thenAnswer((_) async => [drawingA, drawingB]);
+      when(() => mockStorage.setCachedDrawings(any()))
+          .thenAnswer((_) async {});
+
+      final result = await service.replaceDrawings(
+        oldDrawings: [drawingA, drawingB],
+        newDrawings: [splitA1, drawingB], // B unchanged (same object)
+        isAuthenticated: true,
+      );
+
+      // A should be deleted (not in new)
+      verify(() => mockRepository.deleteDrawing('a')).called(1);
+      // B should be preserved (same ID)
+      verifyNever(() => mockRepository.deleteDrawing('b'));
+      verifyNever(() => mockRepository.addDrawing(pathB));
+      // Split should be added (local/new)
+      verify(() => mockRepository.addDrawing(pathA1)).called(1);
+
+      expect(result.length, 2);
+    });
   });
 
   group('clearIfUserChanged', () {

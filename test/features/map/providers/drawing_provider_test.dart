@@ -222,5 +222,137 @@ void main() {
         expect(result.$2, null);
       });
     });
+
+    group('redoStack', () {
+      test('canRedo returns false when redoStack is empty', () {
+        final state = DrawingState(
+          drawingDataList: [],
+          selectedColor: const Color(0xFFFF0000),
+          strokeWidth: 3.0,
+          isDrawingMode: true,
+        );
+
+        expect(state.canRedo, false);
+      });
+
+      test('canRedo returns true when redoStack has items', () {
+        final drawing1 = createTestDrawing('drawing-1', testPath1);
+
+        final state = DrawingState(
+          drawingDataList: [],
+          selectedColor: const Color(0xFFFF0000),
+          strokeWidth: 3.0,
+          isDrawingMode: true,
+          redoStack: [
+            [drawing1]
+          ],
+        );
+
+        expect(state.canRedo, true);
+      });
+
+      test('pushRedo adds current drawingDataList to redo stack', () {
+        final drawing1 = createTestDrawing('drawing-1', testPath1);
+
+        final state = DrawingState(
+          drawingDataList: [drawing1],
+          selectedColor: const Color(0xFFFF0000),
+          strokeWidth: 3.0,
+          isDrawingMode: true,
+        );
+
+        final newState = state.pushRedo();
+
+        expect(newState.redoStack.length, 1);
+        expect(newState.redoStack[0].length, 1);
+        expect(newState.redoStack[0][0].id, 'drawing-1');
+      });
+
+      test('popRedo restores previous drawingDataList', () {
+        final drawing1 = createTestDrawing('drawing-1', testPath1);
+        final drawing2 = createTestDrawing('drawing-2', testPath2);
+
+        final state = DrawingState(
+          drawingDataList: [drawing1],
+          selectedColor: const Color(0xFFFF0000),
+          strokeWidth: 3.0,
+          isDrawingMode: true,
+          redoStack: [
+            [drawing1, drawing2]
+          ],
+        );
+
+        final (newState, restoredDrawings) = state.popRedo();
+
+        expect(newState.redoStack.length, 0);
+        expect(restoredDrawings!.length, 2);
+        expect(restoredDrawings[0].id, 'drawing-1');
+        expect(restoredDrawings[1].id, 'drawing-2');
+      });
+
+      test('popRedo returns null when stack is empty', () {
+        final state = DrawingState(
+          drawingDataList: [],
+          selectedColor: const Color(0xFFFF0000),
+          strokeWidth: 3.0,
+          isDrawingMode: true,
+        );
+
+        final (newState, restoredDrawings) = state.popRedo();
+
+        expect(newState.redoStack.length, 0);
+        expect(restoredDrawings, null);
+      });
+
+      test('clearRedoStack clears the redo stack', () {
+        final drawing1 = createTestDrawing('drawing-1', testPath1);
+
+        final state = DrawingState(
+          drawingDataList: [],
+          selectedColor: const Color(0xFFFF0000),
+          strokeWidth: 3.0,
+          isDrawingMode: true,
+          redoStack: [
+            [drawing1]
+          ],
+        );
+
+        final newState = state.clearRedoStack();
+
+        expect(newState.redoStack.length, 0);
+      });
+
+      test('undo and redo work together', () {
+        final drawing1 = createTestDrawing('drawing-1', testPath1);
+        final drawing2 = createTestDrawing('drawing-2', testPath2);
+
+        // Start: [drawing1, drawing2]
+        var state = DrawingState(
+          drawingDataList: [drawing1, drawing2],
+          selectedColor: const Color(0xFFFF0000),
+          strokeWidth: 3.0,
+          isDrawingMode: true,
+        );
+
+        // Add drawing3: push to undo, change state
+        state = state.pushUndo().copyWith(drawingDataList: [drawing1, drawing2, createTestDrawing('drawing-3', testPath3)]);
+        expect(state.drawingDataList.length, 3);
+        expect(state.undoStack.length, 1);
+
+        // Undo: push current to redo, pop from undo
+        final (afterPop, restored) = state.popUndo();
+        state = afterPop.pushRedo().copyWith(drawingDataList: restored);
+        expect(state.drawingDataList.length, 2);
+        expect(state.undoStack.length, 0);
+        expect(state.redoStack.length, 1);
+
+        // Redo: push current to undo, pop from redo
+        final (afterRedoPop, redoRestored) = state.popRedo();
+        state = afterRedoPop.pushUndo().copyWith(drawingDataList: redoRestored);
+        expect(state.drawingDataList.length, 3);
+        expect(state.undoStack.length, 1);
+        expect(state.redoStack.length, 0);
+      });
+    });
   });
 }

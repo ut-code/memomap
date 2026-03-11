@@ -100,39 +100,61 @@ class DrawingSyncService {
     await storage.setPendingDeletions([...pendingDeletions, drawingId]);
   }
 
-  /// Replaces old drawings with new paths, handling deletions and additions.
-  /// Uses object identity (identical) to determine if a path was preserved.
+  /// Replaces old drawings with new drawings/paths, handling deletions and additions.
+  ///
+  /// When [newDrawings] is provided, uses ID-based comparison (for undo/redo).
+  /// When [newPaths] is provided, uses object identity (for eraser).
   Future<List<DrawingData>> replaceDrawings({
     required List<DrawingData> oldDrawings,
-    required List<DrawingPath> newPaths,
+    List<DrawingPath>? newPaths,
+    List<DrawingData>? newDrawings,
     required bool isAuthenticated,
   }) async {
-    final result = <DrawingData>[];
-    final processedOldDrawings = <DrawingData>{};
+    assert(newPaths != null || newDrawings != null);
 
-    for (final newPath in newPaths) {
-      DrawingData? existingData;
-      for (final old in oldDrawings) {
-        if (identical(old.path, newPath)) {
-          existingData = old;
-          break;
+    final result = <DrawingData>[];
+    final processedOldIds = <String>{};
+
+    if (newDrawings != null) {
+      final oldById = {for (final d in oldDrawings) d.id: d};
+
+      for (final newDrawing in newDrawings) {
+        if (oldById.containsKey(newDrawing.id)) {
+          result.add(oldById[newDrawing.id]!);
+          processedOldIds.add(newDrawing.id);
+        } else {
+          final added = await addDrawing(
+            path: newDrawing.path,
+            isAuthenticated: isAuthenticated,
+          );
+          result.add(added);
         }
       }
+    } else {
+      for (final newPath in newPaths!) {
+        DrawingData? existingData;
+        for (final old in oldDrawings) {
+          if (identical(old.path, newPath)) {
+            existingData = old;
+            break;
+          }
+        }
 
-      if (existingData != null) {
-        result.add(existingData);
-        processedOldDrawings.add(existingData);
-      } else {
-        final newDrawing = await addDrawing(
-          path: newPath,
-          isAuthenticated: isAuthenticated,
-        );
-        result.add(newDrawing);
+        if (existingData != null) {
+          result.add(existingData);
+          processedOldIds.add(existingData.id);
+        } else {
+          final newDrawing = await addDrawing(
+            path: newPath,
+            isAuthenticated: isAuthenticated,
+          );
+          result.add(newDrawing);
+        }
       }
     }
 
     for (final oldDrawing in oldDrawings) {
-      if (!processedOldDrawings.contains(oldDrawing)) {
+      if (!processedOldIds.contains(oldDrawing.id)) {
         await deleteDrawing(
           drawing: oldDrawing,
           isAuthenticated: isAuthenticated,
