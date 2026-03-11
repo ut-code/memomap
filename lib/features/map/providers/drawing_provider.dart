@@ -48,6 +48,9 @@ class DrawingState {
   /// Original drawings saved at eraser operation start (for persistence)
   final List<DrawingData>? eraserOriginalDrawings;
 
+  /// Stack of previous drawing states for undo functionality
+  final List<List<DrawingData>> undoStack;
+
   DrawingState({
     required this.drawingDataList,
     required this.selectedColor,
@@ -56,11 +59,36 @@ class DrawingState {
     this.isEraserMode = false,
     this.eraserTempPaths,
     this.eraserOriginalDrawings,
+    this.undoStack = const [],
   });
+
+  /// Returns true if eraser operation is currently in progress
+  bool get isEraserOperationActive => eraserTempPaths != null;
 
   /// Returns eraser temp paths if in eraser operation, otherwise actual paths
   List<DrawingPath> get paths =>
       eraserTempPaths ?? drawingDataList.map((d) => d.path).toList();
+
+  /// Returns true if there are items in the undo stack
+  bool get canUndo => undoStack.isNotEmpty;
+
+  /// Push current drawingDataList to undo stack (call before modifying)
+  DrawingState pushUndo() {
+    return copyWith(
+      undoStack: [...undoStack, drawingDataList],
+    );
+  }
+
+  /// Pop from undo stack and return (newState, restoredDrawings)
+  /// Returns (newState, null) if stack is empty
+  (DrawingState, List<DrawingData>?) popUndo() {
+    if (undoStack.isEmpty) {
+      return (this, null);
+    }
+    final newStack = List<List<DrawingData>>.from(undoStack);
+    final restored = newStack.removeLast();
+    return (copyWith(undoStack: newStack), restored);
+  }
 
   DrawingState copyWith({
     List<DrawingData>? drawingDataList,
@@ -70,6 +98,7 @@ class DrawingState {
     bool? isEraserMode,
     List<DrawingPath>? Function()? eraserTempPaths,
     List<DrawingData>? Function()? eraserOriginalDrawings,
+    List<List<DrawingData>>? undoStack,
   }) {
     return DrawingState(
       drawingDataList: drawingDataList ?? this.drawingDataList,
@@ -82,6 +111,7 @@ class DrawingState {
       eraserOriginalDrawings: eraserOriginalDrawings != null
           ? eraserOriginalDrawings()
           : this.eraserOriginalDrawings,
+      undoStack: undoStack ?? this.undoStack,
     );
   }
 }
@@ -172,10 +202,12 @@ class DrawingNotifier extends AsyncNotifier<DrawingState> {
 
     final isAuthenticated = ref.read(isAuthenticatedProvider);
 
+    // Push current state to undo stack before adding
+    final withUndo = current.pushUndo();
     final optimisticDrawing = DrawingData.local(path);
     state = AsyncValue.data(
-      current.copyWith(
-        drawingDataList: [...current.drawingDataList, optimisticDrawing],
+      withUndo.copyWith(
+        drawingDataList: [...withUndo.drawingDataList, optimisticDrawing],
       ),
     );
 
@@ -239,12 +271,15 @@ class DrawingNotifier extends AsyncNotifier<DrawingState> {
     // If no eraser operation was active, nothing to do
     if (originalDrawings == null || tempPaths == null) return;
 
+    // Push original state to undo stack before eraser changes
+    final withUndo = current.pushUndo();
+
     // Update drawingDataList with temp paths AND clear eraser state atomically
     // This prevents UI from showing old drawings during persistence
     final tempDrawingDataList =
         tempPaths.map((p) => DrawingData.local(p)).toList();
     state = AsyncValue.data(
-      current.copyWith(
+      withUndo.copyWith(
         drawingDataList: tempDrawingDataList,
         eraserOriginalDrawings: () => null,
         eraserTempPaths: () => null,
@@ -303,8 +338,41 @@ class DrawingNotifier extends AsyncNotifier<DrawingState> {
 
   Future<void> undo() async {
     final current = state.valueOrNull;
-    if (current != null && current.drawingDataList.isNotEmpty) {
-      await removePathAt(current.drawingDataList.length - 1);
+    if (current == null) return;
+    // Skip undo during eraser operation to prevent inconsistency
+    if (current.isEraserOperationActive) return;
+    if (!current.canUndo) return;
+
+    final (newState, restoredDrawings) = current.popUndo();
+    if (restoredDrawings == null) return;
+
+    // Update UI immediately
+    state = AsyncValue.data(
+      newState.copyWith(drawingDataList: restoredDrawings),
+    );
+
+    // Persist the restored state
+    try {
+      final isAuthenticated = ref.read(isAuthenticatedProvider);
+      final syncService = await ref.read(drawingSyncServiceProvider.future);
+
+      // Replace current drawings with restored ones
+      final persistedDrawings = await syncService.replaceDrawings(
+        oldDrawings: current.drawingDataList,
+        newPaths: restoredDrawings.map((d) => d.path).toList(),
+        isAuthenticated: isAuthenticated,
+      );
+
+      final updated = state.valueOrNull;
+      if (updated != null) {
+        state = AsyncValue.data(
+          updated.copyWith(drawingDataList: persistedDrawings),
+        );
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('Failed to persist undo: $e\n$st');
+      }
     }
   }
 
