@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:latlong2/latlong.dart' hide Path;
+import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:memomap/features/map/models/drawing_path.dart';
 import 'package:memomap/features/map/providers/drawing_provider.dart';
 
@@ -18,21 +18,34 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
   DrawingPath? _currentPath;
   Offset? _eraserPosition;
 
+  /// Returns the pixel distance from [pOff] to the line segment [aOff]-[bOff].
+  double _pixelDistToSegment(Offset pOff, Offset aOff, Offset bOff) {
+    final dx = bOff.dx - aOff.dx;
+    final dy = bOff.dy - aOff.dy;
+    final lenSq = dx * dx + dy * dy;
+    if (lenSq == 0) {
+      final ex = pOff.dx - aOff.dx;
+      final ey = pOff.dy - aOff.dy;
+      return math.sqrt(ex * ex + ey * ey);
+    }
+
+    final t = (((pOff.dx - aOff.dx) * dx + (pOff.dy - aOff.dy) * dy) / lenSq)
+        .clamp(0.0, 1.0);
+    final projX = aOff.dx + t * dx;
+    final projY = aOff.dy + t * dy;
+    final ex = pOff.dx - projX;
+    final ey = pOff.dy - projY;
+    return math.sqrt(ex * ex + ey * ey);
+  }
+
   void _handleEraser(Offset localPosition) {
     final drawingState = ref.read(drawingProvider).valueOrNull;
     if (drawingState == null) return;
     final drawingNotifier = ref.read(drawingProvider.notifier);
 
-    final latLng = widget.mapController.camera.screenOffsetToLatLng(
-      localPosition,
-    );
-    final distance = const Distance();
-
-    final metersPerPixel =
-        156543.03392 *
-        math.cos(latLng.latitude * math.pi / 180) /
-        math.pow(2, widget.mapController.camera.zoom);
-    final eraserRadius = drawingState.strokeWidth * metersPerPixel * 2;
+    final camera = widget.mapController.camera;
+    final eraserOff = localPosition;
+    final eraserRadius = drawingState.strokeWidth * 2;
 
     List<DrawingPath> newPaths = [];
     bool changed = false;
@@ -41,8 +54,15 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
       List<LatLng> currentSegment = [];
       bool pathModified = false;
 
-      for (final point in path.points) {
-        if (distance(latLng, point) < eraserRadius) {
+      var prevOff = camera.latLngToScreenOffset(path.points.first);
+      for (int i = 0; i < path.points.length; i++) {
+        final pointOff = i == 0
+            ? prevOff
+            : camera.latLngToScreenOffset(path.points[i]);
+        final dist = _pixelDistToSegment(eraserOff, prevOff, pointOff);
+        prevOff = pointOff;
+
+        if (dist < eraserRadius) {
           if (currentSegment.length > 1) {
             newPaths.add(
               DrawingPath(
@@ -56,7 +76,7 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
           pathModified = true;
           changed = true;
         } else {
-          currentSegment.add(point);
+          currentSegment.add(path.points[i]);
         }
       }
 
@@ -68,8 +88,6 @@ class _DrawingCanvasState extends ConsumerState<DrawingCanvas> {
             strokeWidth: path.strokeWidth,
           ),
         );
-      } else if (pathModified && currentSegment.length <= 1) {
-        // Segment too short after modification, skip
       } else if (!pathModified) {
         newPaths.add(path);
       }
