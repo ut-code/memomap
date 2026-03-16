@@ -39,7 +39,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         width: 60,
         height: 60,
         alignment: Alignment.topCenter,
-        child: const Icon(Icons.location_pin, size: 60, color: Colors.red),
+        child: GestureDetector(
+          onTap: () => context.push('/memo/${pin.id}'),
+          child: const Icon(Icons.location_pin, size: 60, color: Colors.red),
+        ),
       );
     }).toList();
   }

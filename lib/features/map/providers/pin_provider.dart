@@ -126,6 +126,31 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
     }
   }
 
+  Future<void> updatePinMemo(String id, String? memo) async {
+    final pins = state.value ?? [];
+    final index = pins.indexWhere((p) => p.id == id);
+    if (index == -1) return;
+
+    final updatedPin = PinData(
+      id: pins[index].id,
+      userId: pins[index].userId,
+      position: pins[index].position,
+      createdAt: pins[index].createdAt,
+      isLocal: pins[index].isLocal,
+      memo: memo,
+    );
+
+    final newPins = List<PinData>.from(pins);
+    newPins[index] = updatedPin;
+
+    state = AsyncValue.data(newPins);
+
+    // Update local storage
+    final storage = ref.read(localPinStorageProvider);
+    await storage.setLocalPins(newPins.where((p) => p.isLocal).toList());
+    await storage.setCachedPins(newPins.where((p) => !p.isLocal).toList());
+  }
+
   Future<void> refresh() async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(() => build());

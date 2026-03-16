@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:memomap/features/auth/presentation/login_screen.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
 import 'package:memomap/features/map/presentation/map_screen.dart';
+import 'package:memomap/features/map/presentation/memo_edit_screen.dart';
 import 'package:memomap/features/profile/presentation/profile_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -43,8 +44,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
-        path: '/auth-callback',
-        builder: (context, state) => const AuthCallbackScreen(),
+        path: '/memo/:pinId',
+        builder: (context, state) {
+          final pinId = state.pathParameters['pinId']!;
+          return MemoEditScreen(pinId: pinId);
+        },
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

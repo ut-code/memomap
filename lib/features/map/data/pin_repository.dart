@@ -61,6 +61,7 @@ class PinData {
   final LatLng position;
   final DateTime createdAt;
   final bool isLocal;
+  final String? memo;
 
   PinData({
     required this.id,
@@ -68,6 +69,7 @@ class PinData {
     required this.position,
     required this.createdAt,
     this.isLocal = false,
+    this.memo,
   });
 
   factory PinData.local(LatLng position) {
@@ -90,6 +92,7 @@ class PinData {
       ),
       createdAt: DateTime.parse(json['createdAt'] as String),
       isLocal: json['isLocal'] as bool? ?? false,
+      memo: json['memo'] as String?,
     );
   }
 
@@ -101,6 +104,7 @@ class PinData {
       'longitude': position.longitude,
       'createdAt': createdAt.toUtc().toIso8601String(),
       'isLocal': isLocal,
+      'memo': memo,
     };
   }
 }
