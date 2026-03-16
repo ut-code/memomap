@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
+import 'package:memomap/features/map/providers/current_map_provider.dart';
+import 'package:memomap/features/map/providers/map_provider.dart';
 import 'package:memomap/features/map/providers/pin_provider.dart';
 import 'package:memomap/features/map/providers/drawing_provider.dart';
 import 'package:memomap/features/map/presentation/widgets/drawing_canvas.dart';
@@ -48,6 +50,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Widget build(BuildContext context) {
     final isAuthenticated = ref.watch(isAuthenticatedProvider);
     final user = ref.watch(currentUserProvider);
+    final currentMapId = ref.watch(currentMapIdProvider);
+    final currentMap = ref.watch(currentMapProvider);
+    final mapsAsync = ref.watch(mapsProvider);
     final pinsAsync = ref.watch(pinsProvider);
     final drawingStateAsync = ref.watch(drawingProvider);
     final drawingState = drawingStateAsync.valueOrNull;
@@ -57,7 +62,18 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('Memomap'),
+        centerTitle: false,
+        title: GestureDetector(
+          onTap: () => context.push('/maps'),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(currentMap?.name ?? (currentMapId != null ? 'Loading...' : 'Memomap')),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_drop_down, size: 20),
+            ],
+          ),
+        ),
         actions: [
           if (isAuthenticated && user != null)
             Padding(
@@ -94,7 +110,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                                 ~InteractiveFlag.doubleTapZoom,
                     ),
                     onTap: (tapPosition, latlng) {
-                      if (!isDrawingMode) {
+                      if (!isDrawingMode && currentMap != null) {
                         ref.read(pinsProvider.notifier).addPin(latlng);
                       }
                     },
@@ -137,9 +153,40 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                   ],
                 ),
                 IgnorePointer(
-                  ignoring: !isDrawingMode,
+                  ignoring: !isDrawingMode || currentMap == null,
                   child: DrawingCanvas(mapController: _mapController),
                 ),
+                // Only show warning if no map is truly selected (not loading)
+                if (currentMap == null && currentMapId == null && !mapsAsync.isLoading)
+                  Positioned(
+                    top: 16,
+                    left: 16,
+                    right: 16,
+                    child: Material(
+                      elevation: 4,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, color: Colors.amber),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text('No map selected. Create or select a map to add pins and drawings.'),
+                            ),
+                            TextButton(
+                              onPressed: () => context.push('/maps'),
+                              child: const Text('Open Maps'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
                   right: 16,
                   bottom: 16,

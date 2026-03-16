@@ -25,34 +25,35 @@ class DrawingSyncService {
   Future<DrawingData> addDrawing({
     required DrawingPath path,
     required bool isAuthenticated,
+    String? mapId,
   }) async {
     if (!isAuthenticated) {
-      return _addLocalDrawing(path);
+      return _addLocalDrawing(path, mapId: mapId);
     }
 
     final isOnline = await networkChecker.isOnline;
     if (!isOnline) {
-      return _addLocalDrawing(path);
+      return _addLocalDrawing(path, mapId: mapId);
     }
 
     try {
-      final serverDrawing = await repository.addDrawing(path);
+      final serverDrawing = await repository.addDrawing(path, mapId: mapId);
       if (serverDrawing != null) {
         final cachedDrawings = await storage.getCachedDrawings();
         await storage.setCachedDrawings([serverDrawing, ...cachedDrawings]);
         return serverDrawing;
       }
-      return _addLocalDrawing(path);
+      return _addLocalDrawing(path, mapId: mapId);
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to add drawing to server: $e');
       }
-      return _addLocalDrawing(path);
+      return _addLocalDrawing(path, mapId: mapId);
     }
   }
 
-  Future<DrawingData> _addLocalDrawing(DrawingPath path) async {
-    final localDrawing = DrawingData.local(path);
+  Future<DrawingData> _addLocalDrawing(DrawingPath path, {String? mapId}) async {
+    final localDrawing = DrawingData.local(path, mapId: mapId);
     final localDrawings = await storage.getLocalDrawings();
     await storage.setLocalDrawings([localDrawing, ...localDrawings]);
     return localDrawing;
@@ -100,6 +101,26 @@ class DrawingSyncService {
     await storage.setPendingDeletions([...pendingDeletions, drawingId]);
   }
 
+  Future<void> remapLocalMapIds(Map<String, String> idMapping) async {
+    if (idMapping.isEmpty) return;
+
+    final localDrawings = await storage.getLocalDrawings();
+    final updated = localDrawings.map((drawing) {
+      if (drawing.mapId != null && idMapping.containsKey(drawing.mapId)) {
+        return DrawingData(
+          id: drawing.id,
+          userId: drawing.userId,
+          mapId: idMapping[drawing.mapId],
+          path: drawing.path,
+          createdAt: drawing.createdAt,
+          isLocal: drawing.isLocal,
+        );
+      }
+      return drawing;
+    }).toList();
+    await storage.setLocalDrawings(updated);
+  }
+
   /// Replaces old drawings with new drawings/paths, handling deletions and additions.
   ///
   /// When [newDrawings] is provided, uses ID-based comparison (for undo/redo).
@@ -109,6 +130,7 @@ class DrawingSyncService {
     List<DrawingPath>? newPaths,
     List<DrawingData>? newDrawings,
     required bool isAuthenticated,
+    String? mapId,
   }) async {
     assert(newPaths != null || newDrawings != null);
 
@@ -126,6 +148,7 @@ class DrawingSyncService {
           final added = await addDrawing(
             path: newDrawing.path,
             isAuthenticated: isAuthenticated,
+            mapId: mapId,
           );
           result.add(added);
         }
@@ -147,6 +170,7 @@ class DrawingSyncService {
           final newDrawing = await addDrawing(
             path: newPath,
             isAuthenticated: isAuthenticated,
+            mapId: mapId,
           );
           result.add(newDrawing);
         }

@@ -11,6 +11,7 @@ class PostApiPinsResponse {
   const PostApiPinsResponse({
     required this.id,
     required this.userId,
+    required this.mapId,
     required this.latitude,
     required this.longitude,
     required this.createdAt,
@@ -20,6 +21,7 @@ class PostApiPinsResponse {
   
   final String id;
   final String userId;
+  final String? mapId;
   final num latitude;
   final num longitude;
   final String createdAt;

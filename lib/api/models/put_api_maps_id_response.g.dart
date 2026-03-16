@@ -1,29 +1,27 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'post_api_pins_batch_response.dart';
+part of 'put_api_maps_id_response.dart';
 
 // **************************************************************************
 // JsonSerializableGenerator
 // **************************************************************************
 
-PostApiPinsBatchResponse _$PostApiPinsBatchResponseFromJson(
+PutApiMapsIdResponse _$PutApiMapsIdResponseFromJson(
   Map<String, dynamic> json,
-) => PostApiPinsBatchResponse(
+) => PutApiMapsIdResponse(
   id: json['id'] as String,
   userId: json['userId'] as String,
-  mapId: json['mapId'] as String?,
-  latitude: json['latitude'] as num,
-  longitude: json['longitude'] as num,
+  name: json['name'] as String,
+  description: json['description'] as String?,
   createdAt: json['createdAt'] as String,
 );
 
-Map<String, dynamic> _$PostApiPinsBatchResponseToJson(
-  PostApiPinsBatchResponse instance,
+Map<String, dynamic> _$PutApiMapsIdResponseToJson(
+  PutApiMapsIdResponse instance,
 ) => <String, dynamic>{
   'id': instance.id,
   'userId': instance.userId,
-  'mapId': instance.mapId,
-  'latitude': instance.latitude,
-  'longitude': instance.longitude,
+  'name': instance.name,
+  'description': instance.description,
   'createdAt': instance.createdAt,
 };

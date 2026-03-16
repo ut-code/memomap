@@ -823,6 +823,53 @@ void main() {
     });
   });
 
+  group('remapLocalMapIds', () {
+    test('should update mapIds of local drawings matching the mapping',
+        () async {
+      final localDrawings = [
+        DrawingData(
+          id: 'drawing-1',
+          userId: null,
+          mapId: 'local-map-1',
+          path: testPath,
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: true,
+        ),
+        DrawingData(
+          id: 'drawing-2',
+          userId: null,
+          mapId: 'local-map-2',
+          path: testPath,
+          createdAt: DateTime.utc(2024, 1, 16),
+          isLocal: true,
+        ),
+      ];
+
+      when(() => mockStorage.getLocalDrawings())
+          .thenAnswer((_) async => localDrawings);
+      when(() => mockStorage.setLocalDrawings(any()))
+          .thenAnswer((_) async {});
+
+      await service.remapLocalMapIds({
+        'local-map-1': 'server-map-1',
+      });
+
+      final captured =
+          verify(() => mockStorage.setLocalDrawings(captureAny())).captured;
+      final updatedDrawings = captured.last as List<DrawingData>;
+
+      expect(updatedDrawings[0].mapId, 'server-map-1');
+      expect(updatedDrawings[1].mapId, 'local-map-2');
+    });
+
+    test('should do nothing when mapping is empty', () async {
+      await service.remapLocalMapIds({});
+
+      verifyNever(() => mockStorage.getLocalDrawings());
+      verifyNever(() => mockStorage.setLocalDrawings(any()));
+    });
+  });
+
   group('clearIfUserChanged', () {
     test('clears all when user changes', () async {
       when(() => mockStorage.getLastUserId())

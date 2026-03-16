@@ -1,3 +1,4 @@
+import { relations } from "drizzle-orm";
 import {
 	boolean,
 	doublePrecision,
@@ -68,16 +69,43 @@ export const jwks = pgTable("jwks", {
 });
 
 // Application tables
+
+export const maps = pgTable("maps", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	name: text("name").notNull(),
+	description: text("description"),
+	createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type Map = typeof maps.$inferSelect;
+export type NewMap = typeof maps.$inferInsert;
+
+export const mapsRelations = relations(maps, ({ many }) => ({
+	pins: many(pins),
+	drawings: many(drawings),
+}));
+
 // userId is text to match Better Auth user.id
 export const pins = pgTable("pins", {
 	id: uuid("id").primaryKey().defaultRandom(),
 	userId: text("user_id")
 		.notNull()
 		.references(() => user.id, { onDelete: "cascade" }),
+	mapId: uuid("map_id").references(() => maps.id, { onDelete: "cascade" }),
 	latitude: doublePrecision("latitude").notNull(),
 	longitude: doublePrecision("longitude").notNull(),
 	createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const pinsRelations = relations(pins, ({ one }) => ({
+	map: one(maps, {
+		fields: [pins.mapId],
+		references: [maps.id],
+	}),
+}));
 
 export type Pin = typeof pins.$inferSelect;
 export type NewPin = typeof pins.$inferInsert;
@@ -87,12 +115,19 @@ export const drawings = pgTable("drawings", {
 	userId: text("user_id")
 		.notNull()
 		.references(() => user.id, { onDelete: "cascade" }),
-	mapId: uuid("map_id"),
+	mapId: uuid("map_id").references(() => maps.id, { onDelete: "cascade" }),
 	points: jsonb("points").notNull(),
 	color: text("color").notNull(),
 	strokeWidth: doublePrecision("stroke_width").notNull(),
 	createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const drawingsRelations = relations(drawings, ({ one }) => ({
+	map: one(maps, {
+		fields: [drawings.mapId],
+		references: [maps.id],
+	}),
+}));
 
 export type Drawing = typeof drawings.$inferSelect;
 export type NewDrawing = typeof drawings.$inferInsert;

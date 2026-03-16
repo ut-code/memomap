@@ -9,6 +9,7 @@ import 'package:memomap/features/map/data/drawing_repository.dart';
 import 'package:memomap/features/map/data/local_drawing_storage.dart';
 import 'package:memomap/features/map/data/network_checker.dart';
 import 'package:memomap/features/map/models/drawing_path.dart';
+import 'package:memomap/features/map/providers/current_map_provider.dart';
 import 'package:memomap/features/map/providers/drawing_provider.dart';
 import 'package:memomap/features/map/services/drawing_sync_service.dart';
 import 'package:mocktail/mocktail.dart';
@@ -40,7 +41,7 @@ void main() {
       return DrawingData(
         id: id,
         userId: 'user-123',
-        mapId: null,
+        mapId: 'test-map-id',
         path: path,
         createdAt: DateTime.utc(2024, 1, 15),
       );
@@ -52,7 +53,7 @@ void main() {
       registerFallbackValue(DrawingData(
         id: 'fallback',
         userId: 'user',
-        mapId: null,
+        mapId: 'test-map-id',
         path: testPath1,
         createdAt: DateTime.utc(2024, 1, 1),
       ));
@@ -87,6 +88,7 @@ void main() {
             (ref) async => null,
           ),
           isAuthenticatedProvider.overrideWith((ref) => false),
+          currentMapIdProvider.overrideWith((ref) => _MockCurrentMapIdNotifier()),
         ],
       );
     }
@@ -113,6 +115,7 @@ void main() {
         when(() => mockSyncService.addDrawing(
               path: any(named: 'path'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((_) async {
           final drawing = createDrawing('b', testPath2);
           serverDrawings.add(drawing.id);
@@ -123,6 +126,7 @@ void main() {
               oldDrawings: any(named: 'oldDrawings'),
               newDrawings: any(named: 'newDrawings'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((invocation) async {
           final oldDrawings =
               invocation.namedArguments[#oldDrawings] as List<DrawingData>;
@@ -185,6 +189,7 @@ void main() {
               oldDrawings: any(named: 'oldDrawings'),
               newDrawings: any(named: 'newDrawings'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((invocation) async {
           final newDrawings =
               invocation.namedArguments[#newDrawings] as List<DrawingData>;
@@ -236,6 +241,7 @@ void main() {
         when(() => mockSyncService.addDrawing(
               path: any(named: 'path'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((_) async => createDrawing('c', testPath1));
 
         await notifier.addPath(testPath1);
@@ -246,12 +252,14 @@ void main() {
               oldDrawings: any(named: 'oldDrawings'),
               newDrawings: any(named: 'newDrawings'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((_) => undoCompleter.future);
 
         final addPathCompleter = Completer<DrawingData>();
         when(() => mockSyncService.addDrawing(
               path: any(named: 'path'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((_) => addPathCompleter.future);
 
         // Start undo (will wait on undoCompleter)
@@ -304,6 +312,7 @@ void main() {
         when(() => mockSyncService.addDrawing(
               path: any(named: 'path'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((_) {
           callCount++;
           switch (callCount) {
@@ -365,6 +374,7 @@ void main() {
         when(() => mockSyncService.addDrawing(
               path: any(named: 'path'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((inv) async {
           final path = inv.namedArguments[#path] as DrawingPath;
           return createDrawing(
@@ -385,6 +395,7 @@ void main() {
               oldDrawings: any(named: 'oldDrawings'),
               newDrawings: any(named: 'newDrawings'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((_) {
           undoCallCount++;
           if (undoCallCount == 1) {
@@ -429,12 +440,14 @@ void main() {
         when(() => mockSyncService.addDrawing(
               path: any(named: 'path'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((_) async => createDrawing('b', testPath2));
 
         when(() => mockSyncService.replaceDrawings(
               oldDrawings: any(named: 'oldDrawings'),
               newDrawings: any(named: 'newDrawings'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((inv) async {
           return inv.namedArguments[#newDrawings] as List<DrawingData>;
         });
@@ -455,6 +468,7 @@ void main() {
               oldDrawings: any(named: 'oldDrawings'),
               newDrawings: any(named: 'newDrawings'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((_) {
           callCount++;
           if (callCount == 1) {
@@ -502,6 +516,7 @@ void main() {
         when(() => mockSyncService.addDrawing(
               path: any(named: 'path'),
               isAuthenticated: any(named: 'isAuthenticated'),
+              mapId: any(named: 'mapId'),
             )).thenAnswer((_) {
           addDrawingCallCount++;
           if (addDrawingCallCount == 1) {
@@ -534,4 +549,16 @@ void main() {
       },
     );
   });
+}
+
+class _MockCurrentMapIdNotifier extends StateNotifier<String?> implements CurrentMapIdNotifier {
+  _MockCurrentMapIdNotifier() : super('test-map-id');
+
+  @override
+  Future<void> setCurrentMapId(String? mapId) async {
+    state = mapId;
+  }
+
+  @override
+  Future<void> ensureValidMapSelected() async {}
 }

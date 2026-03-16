@@ -103,11 +103,11 @@ class DrawingData {
     this.isLocal = false,
   });
 
-  factory DrawingData.local(DrawingPath path) {
+  factory DrawingData.local(DrawingPath path, {String? mapId}) {
     return DrawingData(
       id: const Uuid().v4(),
       userId: null,
-      mapId: null,
+      mapId: mapId,
       path: path,
       createdAt: DateTime.now(),
       isLocal: true,
@@ -165,7 +165,7 @@ class DrawingRepository implements DrawingRepositoryBase {
   }
 
   @override
-  Future<DrawingData?> addDrawing(DrawingPath path) async {
+  Future<DrawingData?> addDrawing(DrawingPath path, {String? mapId}) async {
     if (!await _isAuthenticated()) return null;
 
     final response = await _api.drawings.postApiDrawings(
@@ -175,6 +175,7 @@ class DrawingRepository implements DrawingRepositoryBase {
             .toList(),
         color: path.color.toARGB32().toString(),
         strokeWidth: path.strokeWidth,
+        mapId: mapId,
       ),
     );
 
@@ -203,6 +204,7 @@ class DrawingRepository implements DrawingRepositoryBase {
                       .toList(),
                   color: drawing.path.color.toARGB32().toString(),
                   strokeWidth: drawing.path.strokeWidth,
+                  mapId: drawing.mapId,
                 ))
             .toList(),
       ),

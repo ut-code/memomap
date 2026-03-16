@@ -11,12 +11,14 @@ class ApiPinsRequestBody {
   const ApiPinsRequestBody({
     required this.latitude,
     required this.longitude,
+    this.mapId,
   });
   
   factory ApiPinsRequestBody.fromJson(Map<String, Object?> json) => _$ApiPinsRequestBodyFromJson(json);
   
   final num latitude;
   final num longitude;
+  final String? mapId;
 
   Map<String, Object?> toJson() => _$ApiPinsRequestBodyToJson(this);
 }

@@ -69,7 +69,7 @@ class Controls extends ConsumerWidget {
                                     ? Colors.black
                                     : Colors.grey,
                               ),
-                              tooltip: '元に戻す',
+                              tooltip: 'Undo',
                               onPressed: drawingState?.canUndo == true
                                   ? () => drawingNotifier.undo()
                                   : null,
@@ -81,7 +81,7 @@ class Controls extends ConsumerWidget {
                                     ? Colors.black
                                     : Colors.grey,
                               ),
-                              tooltip: 'やり直す',
+                              tooltip: 'Redo',
                               onPressed: drawingState?.canRedo == true
                                   ? () => drawingNotifier.redo()
                                   : null,
@@ -93,7 +93,7 @@ class Controls extends ConsumerWidget {
                                     ? Colors.blue
                                     : Colors.black,
                               ),
-                              tooltip: '消しゴム',
+                              tooltip: 'Eraser',
                               onPressed: () => drawingNotifier.setEraserMode(
                                 !isEraserMode,
                               ),

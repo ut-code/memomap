@@ -15,6 +15,7 @@ export const LongitudeSchema = v.pipe(
 export const CreatePinSchema = v.object({
 	latitude: LatitudeSchema,
 	longitude: LongitudeSchema,
+	mapId: v.optional(v.nullable(v.string())),
 });
 
 export const BatchCreatePinsSchema = v.object({
@@ -23,6 +24,7 @@ export const BatchCreatePinsSchema = v.object({
 			v.object({
 				latitude: LatitudeSchema,
 				longitude: LongitudeSchema,
+				mapId: v.optional(v.nullable(v.string())),
 			}),
 		),
 		v.maxLength(100),
@@ -32,6 +34,7 @@ export const BatchCreatePinsSchema = v.object({
 export const PinSchema = v.object({
 	id: v.string(),
 	userId: v.string(),
+	mapId: v.nullable(v.string()),
 	latitude: v.number(),
 	longitude: v.number(),
 	createdAt: v.string(),
