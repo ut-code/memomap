@@ -11,157 +11,155 @@ class Controls extends ConsumerWidget {
     final drawingStateAsync = ref.watch(drawingProvider);
     final drawingState = drawingStateAsync.valueOrNull;
     final drawingNotifier = ref.read(drawingProvider.notifier);
+    final colorScheme = Theme.of(context).colorScheme;
 
-    final isDrawingMode = drawingState?.isDrawingMode ?? false;
-    final isEraserMode = drawingState?.isEraserMode ?? false;
-    final selectedColor = drawingState?.selectedColor ?? Colors.red;
-    final strokeWidth = drawingState?.strokeWidth ?? 3.0;
-
-    return Row(
-      children: [
-        // ピンモードボタン
-        GestureDetector(
-          onTap: () => drawingNotifier.setDrawingMode(false),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.white.withValues(alpha: 0.9),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.pin_drop,
-                  size: 60,
-                  color: !isDrawingMode ? Colors.red : Colors.grey,
-                ),
-              ],
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.22),
+            blurRadius: 18,
+            spreadRadius: 1,
+            offset: const Offset(0, -6),
           ),
-        ),
-        // 描画モードコントロール（展開・折りたたみ）
-        Expanded(
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            transitionBuilder: (Widget child, Animation<double> animation) {
-              return FadeTransition(
-                opacity: animation,
-                child: SizeTransition(
-                  sizeFactor: animation,
-                  axis: Axis.horizontal,
-                  axisAlignment: -1,
-                  child: child,
+        ],
+      ),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeInOut,
+        alignment: Alignment.topCenter,
+        child: Row(
+          children: [
+            // ピンモードボタン
+            GestureDetector(
+              onTap: () => drawingNotifier.setDrawingMode(false),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.explore,
+                      size: 60,
+                      color: !drawingState.isDrawingMode
+                          ? colorScheme.primary
+                          : Colors.grey,
+                    ),
+                  ],
                 ),
-              );
-            },
-            child: isDrawingMode
-                ? Container(
-                    key: const ValueKey('expanded_controls'),
-                    padding: const EdgeInsets.only(bottom: 24, top: 12),
-                    color: Colors.white.withValues(alpha: 0.9),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        OverflowBar(
-                          alignment: MainAxisAlignment.center,
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                Icons.undo_rounded,
-                                color: drawingState?.canUndo == true
-                                    ? Colors.black
-                                    : Colors.grey,
-                              ),
-                              tooltip: 'Undo',
-                              onPressed: drawingState?.canUndo == true
-                                  ? () => drawingNotifier.undo()
-                                  : null,
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.redo_rounded,
-                                color: drawingState?.canRedo == true
-                                    ? Colors.black
-                                    : Colors.grey,
-                              ),
-                              tooltip: 'Redo',
-                              onPressed: drawingState?.canRedo == true
-                                  ? () => drawingNotifier.redo()
-                                  : null,
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                MyFlutterApp.eraser_1,
-                                color: isEraserMode
-                                    ? Colors.blue
-                                    : Colors.black,
-                              ),
-                              tooltip: 'Eraser',
-                              onPressed: () => drawingNotifier.setEraserMode(
-                                !isEraserMode,
-                              ),
-                            ),
-                          ],
-                        ),
-                        // ColorSelectionWidget
-                        Column(
+              ),
+            ),
+            // 描画モードコントロール（展開・折りたたみ）
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (Widget child, Animation<double> animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SizeTransition(
+                      sizeFactor: animation,
+                      axis: Axis.horizontal,
+                      axisAlignment: -1,
+                      child: child,
+                    ),
+                  );
+                },
+                child: drawingState.isDrawingMode
+                    ? Container(
+                        key: const ValueKey('expanded_controls'),
+                        padding: const EdgeInsets.only(bottom: 24, top: 12),
+                        child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              children:
-                                  [
-                                        Colors.red,
-                                        Colors.yellow,
-                                        Colors.green,
-                                        Colors.blue,
-                                        Colors.purple,
-                                        Colors.black,
-                                      ]
-                                      .asMap()
-                                      .entries
-                                      .map(
-                                        (entry) => _ColorCircle(
-                                          index: entry.key,
-                                          isSelected:
-                                              !isEraserMode &&
-                                              selectedColor == entry.value,
-                                          color: entry.value,
-                                          onTap: () => drawingNotifier
-                                              .selectColor(entry.value),
-                                        ),
-                                      )
-                                      .toList(),
+                            // UndoButtonBar
+                            OverflowBar(
+                              alignment: MainAxisAlignment.center,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.undo_rounded),
+                                  tooltip: '元に戻す',
+                                  onPressed: () => drawingNotifier.undo(),
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    MyFlutterApp.eraser_1,
+                                    color: drawingState.isEraserMode
+                                        ? colorScheme.primary
+                                        : colorScheme.onSurface,
+                                  ),
+                                  tooltip: '消しゴム',
+                                  onPressed: () =>
+                                      drawingNotifier.setEraserMode(
+                                        !drawingState.isEraserMode,
+                                      ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 10),
-                            _StrokeWidthSlider(
-                              color: isEraserMode
-                                  ? Colors.grey
-                                  : selectedColor,
-                              width: strokeWidth,
-                              setWidth: (newWidth) =>
-                                  drawingNotifier.changeStrokeWidth(newWidth),
+                            // ColorSelectionWidget
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceAround,
+                                  children:
+                                      [
+                                            Colors.red,
+                                            Colors.yellow,
+                                            Colors.green,
+                                            Colors.blue,
+                                            Colors.purple,
+                                            Colors.black,
+                                          ]
+                                          .asMap()
+                                          .entries
+                                          .map(
+                                            (entry) => _ColorCircle(
+                                              index: entry.key,
+                                              isSelected:
+                                                  !drawingState.isEraserMode &&
+                                                  drawingState.selectedColor ==
+                                                      entry.value,
+                                              color: entry.value,
+                                              onTap: () => drawingNotifier
+                                                  .selectColor(entry.value),
+                                            ),
+                                          )
+                                          .toList(),
+                                ),
+                                const SizedBox(height: 10),
+                                _StrokeWidthSlider(
+                                  color: drawingState.isEraserMode
+                                      ? Colors.grey
+                                      : drawingState.selectedColor,
+                                  width: drawingState.strokeWidth,
+                                  setWidth: (newWidth) => drawingNotifier
+                                      .changeStrokeWidth(newWidth),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  )
-                : GestureDetector(
-                    key: const ValueKey('collapsed_icon'),
-                    onTap: () => drawingNotifier.setDrawingMode(true),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      color: Colors.white.withValues(alpha: 0.9),
-                      child: const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.brush, size: 60, color: Colors.grey),
-                        ],
+                      )
+                    : GestureDetector(
+                        key: const ValueKey('collapsed_icon'),
+                        onTap: () => drawingNotifier.setDrawingMode(true),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          child: const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.brush, size: 60, color: Colors.grey),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-          ),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -195,11 +193,20 @@ class _ColorCircle extends StatelessWidget {
           shape: BoxShape.circle,
           color: color,
           border: Border.all(
-            color: isSelected ? Colors.black54 : Colors.white70,
+            color: isSelected
+                ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7)
+                : Theme.of(context).colorScheme.outlineVariant,
             width: isSelected ? 3 : 1,
           ),
           boxShadow: isSelected
-              ? [const BoxShadow(blurRadius: 4, color: Colors.black26)]
+              ? [
+                  BoxShadow(
+                    blurRadius: 4,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.shadow.withValues(alpha: 0.25),
+                  ),
+                ]
               : null,
         ),
       ),
@@ -236,8 +243,12 @@ class _StrokeWidthSlider extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                   gradient: LinearGradient(
                     colors: [
-                      Colors.grey.withValues(alpha: 0.2),
-                      Colors.grey.withValues(alpha: 0.8),
+                      Theme.of(
+                        context,
+                      ).colorScheme.outlineVariant.withValues(alpha: 0.25),
+                      Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.55),
                     ],
                   ),
                 ),
@@ -253,8 +264,10 @@ class _StrokeWidthSlider extends StatelessWidget {
                 data: SliderTheme.of(context).copyWith(
                   activeTrackColor: Colors.transparent,
                   inactiveTrackColor: Colors.transparent,
-                  thumbColor: Colors.white,
-                  overlayColor: Colors.black12,
+                  thumbColor: Theme.of(context).colorScheme.surface,
+                  overlayColor: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.12),
                   trackHeight: 12,
                   thumbShape: const RoundSliderThumbShape(
                     enabledThumbRadius: 8,
