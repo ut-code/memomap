@@ -419,6 +419,52 @@ void main() {
       });
     });
 
+    group('remapLocalMapIds', () {
+      test('should update mapIds of local pins matching the mapping', () async {
+        final localPins = [
+          PinData(
+            id: 'pin-1',
+            userId: null,
+            mapId: 'local-map-1',
+            position: const LatLng(35.6762, 139.6503),
+            createdAt: DateTime.utc(2024, 1, 15),
+            isLocal: true,
+          ),
+          PinData(
+            id: 'pin-2',
+            userId: null,
+            mapId: 'local-map-2',
+            position: const LatLng(35.6895, 139.6917),
+            createdAt: DateTime.utc(2024, 1, 16),
+            isLocal: true,
+          ),
+        ];
+
+        when(() => mockStorage.getLocalPins())
+            .thenAnswer((_) async => localPins);
+        when(() => mockStorage.setLocalPins(any()))
+            .thenAnswer((_) async {});
+
+        await syncService.remapLocalMapIds({
+          'local-map-1': 'server-map-1',
+        });
+
+        final captured =
+            verify(() => mockStorage.setLocalPins(captureAny())).captured;
+        final updatedPins = captured.last as List<PinData>;
+
+        expect(updatedPins[0].mapId, 'server-map-1');
+        expect(updatedPins[1].mapId, 'local-map-2');
+      });
+
+      test('should do nothing when mapping is empty', () async {
+        await syncService.remapLocalMapIds({});
+
+        verifyNever(() => mockStorage.getLocalPins());
+        verifyNever(() => mockStorage.setLocalPins(any()));
+      });
+    });
+
     group('clearIfUserChanged', () {
       test('should clear local data when user signs out', () async {
         when(() => mockStorage.getLastUserId())

@@ -14,6 +14,7 @@ import 'package:uuid/uuid.dart';
 PinData _createPinData({
   required String id,
   required String userId,
+  required String? mapId,
   required num latitude,
   required num longitude,
   required String createdAt,
@@ -21,6 +22,7 @@ PinData _createPinData({
     PinData(
       id: id,
       userId: userId,
+      mapId: mapId,
       position: LatLng(latitude.toDouble(), longitude.toDouble()),
       createdAt: DateTime.parse(createdAt),
     );
@@ -29,6 +31,7 @@ extension GetApiPinsResponseExt on GetApiPinsResponse {
   PinData toPinData() => _createPinData(
         id: id,
         userId: userId,
+        mapId: mapId,
         latitude: latitude,
         longitude: longitude,
         createdAt: createdAt,
@@ -39,6 +42,7 @@ extension PostApiPinsResponseExt on PostApiPinsResponse {
   PinData toPinData() => _createPinData(
         id: id,
         userId: userId,
+        mapId: mapId,
         latitude: latitude,
         longitude: longitude,
         createdAt: createdAt,
@@ -49,6 +53,7 @@ extension PostApiPinsBatchResponseExt on PostApiPinsBatchResponse {
   PinData toPinData() => _createPinData(
         id: id,
         userId: userId,
+        mapId: mapId,
         latitude: latitude,
         longitude: longitude,
         createdAt: createdAt,
@@ -58,6 +63,7 @@ extension PostApiPinsBatchResponseExt on PostApiPinsBatchResponse {
 class PinData {
   final String id;
   final String? userId;
+  final String? mapId;
   final LatLng position;
   final DateTime createdAt;
   final bool isLocal;
@@ -65,15 +71,17 @@ class PinData {
   PinData({
     required this.id,
     required this.userId,
+    this.mapId,
     required this.position,
     required this.createdAt,
     this.isLocal = false,
   });
 
-  factory PinData.local(LatLng position) {
+  factory PinData.local(LatLng position, {String? mapId}) {
     return PinData(
       id: const Uuid().v4(),
       userId: null,
+      mapId: mapId,
       position: position,
       createdAt: DateTime.now(),
       isLocal: true,
@@ -84,6 +92,7 @@ class PinData {
     return PinData(
       id: json['id'] as String,
       userId: json['userId'] as String?,
+      mapId: json['mapId'] as String?,
       position: LatLng(
         (json['latitude'] as num).toDouble(),
         (json['longitude'] as num).toDouble(),
@@ -97,6 +106,7 @@ class PinData {
     return {
       'id': id,
       'userId': userId,
+      'mapId': mapId,
       'latitude': position.latitude,
       'longitude': position.longitude,
       'createdAt': createdAt.toUtc().toIso8601String(),
@@ -133,13 +143,14 @@ class PinRepository implements PinRepositoryBase {
   }
 
   @override
-  Future<PinData?> addPin(LatLng position) async {
+  Future<PinData?> addPin(LatLng position, {String? mapId}) async {
     if (!await _isAuthenticated()) return null;
 
     final response = await _api.pins.postApiPins(
       body: ApiPinsRequestBody(
         latitude: position.latitude,
         longitude: position.longitude,
+        mapId: mapId,
       ),
     );
 
@@ -154,7 +165,7 @@ class PinRepository implements PinRepositoryBase {
   }
 
   @override
-  Future<List<PinData>> uploadLocalPins(List<PinData> localPins) async {
+  Future<List<PinData>> uploadLocalPins(List<PinData> localPins, {String? mapId}) async {
     if (!await _isAuthenticated() || localPins.isEmpty) return [];
 
     final response = await _api.pins.postApiPinsBatch(
@@ -163,6 +174,7 @@ class PinRepository implements PinRepositoryBase {
             .map((pin) => Pins(
                   latitude: pin.position.latitude,
                   longitude: pin.position.longitude,
+                  mapId: pin.mapId ?? mapId,
                 ))
             .toList(),
       ),

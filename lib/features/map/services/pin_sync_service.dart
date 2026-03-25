@@ -25,34 +25,35 @@ class PinSyncService {
   Future<PinData> addPin({
     required LatLng position,
     required bool isAuthenticated,
+    String? mapId,
   }) async {
     if (!isAuthenticated) {
-      return _addLocalPin(position);
+      return _addLocalPin(position, mapId: mapId);
     }
 
     final isOnline = await networkChecker.isOnline;
     if (!isOnline) {
-      return _addLocalPin(position);
+      return _addLocalPin(position, mapId: mapId);
     }
 
     try {
-      final serverPin = await repository.addPin(position);
+      final serverPin = await repository.addPin(position, mapId: mapId);
       if (serverPin != null) {
         final cachedPins = await storage.getCachedPins();
         await storage.setCachedPins([serverPin, ...cachedPins]);
         return serverPin;
       }
-      return _addLocalPin(position);
+      return _addLocalPin(position, mapId: mapId);
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to add pin to server: $e');
       }
-      return _addLocalPin(position);
+      return _addLocalPin(position, mapId: mapId);
     }
   }
 
-  Future<PinData> _addLocalPin(LatLng position) async {
-    final localPin = PinData.local(position);
+  Future<PinData> _addLocalPin(LatLng position, {String? mapId}) async {
+    final localPin = PinData.local(position, mapId: mapId);
     final localPins = await storage.getLocalPins();
     await storage.setLocalPins([localPin, ...localPins]);
     return localPin;
@@ -98,6 +99,26 @@ class PinSyncService {
   Future<void> _addToPendingDeletions(String pinId) async {
     final pendingDeletions = await storage.getPendingDeletions();
     await storage.setPendingDeletions([...pendingDeletions, pinId]);
+  }
+
+  Future<void> remapLocalMapIds(Map<String, String> idMapping) async {
+    if (idMapping.isEmpty) return;
+
+    final localPins = await storage.getLocalPins();
+    final updated = localPins.map((pin) {
+      if (pin.mapId != null && idMapping.containsKey(pin.mapId)) {
+        return PinData(
+          id: pin.id,
+          userId: pin.userId,
+          mapId: idMapping[pin.mapId],
+          position: pin.position,
+          createdAt: pin.createdAt,
+          isLocal: pin.isLocal,
+        );
+      }
+      return pin;
+    }).toList();
+    await storage.setLocalPins(updated);
   }
 
   Future<void> syncWithServer() async {

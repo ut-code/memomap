@@ -10,10 +10,12 @@ ApiPinsRequestBody _$ApiPinsRequestBodyFromJson(Map<String, dynamic> json) =>
     ApiPinsRequestBody(
       latitude: json['latitude'] as num,
       longitude: json['longitude'] as num,
+      mapId: json['mapId'] as String?,
     );
 
 Map<String, dynamic> _$ApiPinsRequestBodyToJson(ApiPinsRequestBody instance) =>
     <String, dynamic>{
       'latitude': instance.latitude,
       'longitude': instance.longitude,
+      'mapId': instance.mapId,
     };

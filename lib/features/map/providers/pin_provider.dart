@@ -5,6 +5,8 @@ import 'package:memomap/features/auth/providers/auth_provider.dart';
 import 'package:memomap/features/map/data/local_pin_storage.dart';
 import 'package:memomap/features/map/data/network_checker.dart';
 import 'package:memomap/features/map/data/pin_repository.dart';
+import 'package:memomap/features/map/providers/current_map_provider.dart';
+import 'package:memomap/features/map/providers/map_provider.dart' show mapIdMappingProvider;
 import 'package:memomap/features/map/services/pin_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -40,6 +42,16 @@ final pinsProvider = AsyncNotifierProvider<PinsNotifier, List<PinData>>(() {
 });
 
 class PinsNotifier extends AsyncNotifier<List<PinData>> {
+  String? get _currentMapId => ref.read(currentMapIdProvider);
+
+  List<PinData> _filterByCurrentMap(List<PinData> pins) {
+    final mapId = _currentMapId;
+    if (mapId == null) {
+      return [];
+    }
+    return pins.where((p) => p.mapId == mapId).toList();
+  }
+
   @override
   Future<List<PinData>> build() async {
     ref.listen(sessionProvider, (prev, next) {
@@ -50,27 +62,39 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
       }
     });
 
+    ref.listen(currentMapIdProvider, (prev, next) {
+      if (prev != next) {
+        ref.invalidateSelf();
+      }
+    });
+
     final syncService = await ref.watch(pinSyncServiceProvider.future);
     final session = ref.read(sessionProvider).valueOrNull;
     final currentUserId = session?.user.id;
 
+    // Clear before reading to avoid briefly showing previous user's data
     await syncService.clearIfUserChanged(currentUserId);
 
-    final cachedPins = await syncService.getAllPins();
-    state = AsyncValue.data(cachedPins);
+    final allPins = await syncService.getAllPins();
+    final filteredPins = _filterByCurrentMap(allPins);
+    state = AsyncValue.data(filteredPins);
 
     if (currentUserId != null) {
+      final idMapping = ref.read(mapIdMappingProvider);
+      if (idMapping.isNotEmpty) {
+        await syncService.remapLocalMapIds(idMapping);
+      }
       _syncInBackground(syncService);
     }
 
-    return cachedPins;
+    return filteredPins;
   }
 
   Future<void> _syncInBackground(PinSyncService syncService) async {
     try {
       await syncService.syncWithServer();
-      final freshPins = await syncService.getAllPins();
-      state = AsyncValue.data(freshPins);
+      final allPins = await syncService.getAllPins();
+      state = AsyncValue.data(_filterByCurrentMap(allPins));
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('Background sync failed: $e\n$st');
@@ -81,15 +105,17 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
   Future<void> addPin(LatLng position) async {
     final isAuthenticated = ref.read(isAuthenticatedProvider);
     final syncService = await ref.read(pinSyncServiceProvider.future);
+    final mapId = _currentMapId;
 
     final previous = state.value ?? [];
-    final optimisticPin = PinData.local(position);
+    final optimisticPin = PinData.local(position, mapId: mapId);
     state = AsyncValue.data([optimisticPin, ...previous]);
 
     try {
       final realPin = await syncService.addPin(
         position: position,
         isAuthenticated: isAuthenticated,
+        mapId: mapId,
       );
 
       state = AsyncValue.data(

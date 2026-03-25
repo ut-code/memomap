@@ -55,6 +55,7 @@ dependencies:
   jwt_decoder: ^2.0.1
   shared_preferences: ^2.3.3
   connectivity_plus: ^6.1.0
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
