@@ -7,6 +7,7 @@ import 'package:memomap/features/map/providers/pin_provider.dart';
 import 'package:memomap/features/map/providers/drawing_provider.dart';
 import 'package:memomap/features/map/models/drawing_path.dart';
 import 'package:memomap/features/map/presentation/widgets/controls.dart';
+import 'package:memomap/features/map/presentation/widgets/pin_list.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
@@ -29,6 +30,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   List<LatLng> _currentLatLngs = [];
   Offset? _eraserPosition;
   final Map<String, PinData> _annotationToPin = {};
+  double _pinListExtent = 0.2;
+  double _mapViewportHeight = 0;
 
   @override
   void initState() {
@@ -52,9 +55,23 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       },
     );
 
+    await mapboxMap.logo.updateSettings(
+      LogoSettings(position: OrnamentPosition.TOP_LEFT),
+    );
+    await mapboxMap.attribution.updateSettings(
+      AttributionSettings(position: OrnamentPosition.TOP_LEFT),
+    );
+
     _updatePins();
 
     setState(() {}); // _mapboxMapが設定されたことを通知
+  }
+
+  void _onPinListExtentChanged(double extent) {
+    if ((_pinListExtent - extent).abs() < 0.001) return;
+    setState(() {
+      _pinListExtent = extent;
+    });
   }
 
   Future<void> _updatePins() async {
@@ -110,10 +127,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         _activePinScreenPos!.dx,
         _activePinScreenPos!.dy,
       ),
-      items: const [
+      items: [
         PopupMenuItem(
           value: "delete",
-          child: Text("Delete", style: TextStyle(color: Colors.red)),
+          child: Text(
+            "Delete",
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
         ),
       ],
     );
@@ -412,6 +432,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final isAuthenticated = ref.watch(isAuthenticatedProvider);
     final user = ref.watch(currentUserProvider);
     final drawingState = ref.watch(drawingProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
     ref.listen(drawingProvider.select((s) => s.paths), (previous, next) {
       _updateLines();
@@ -451,96 +472,109 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           Column(
             children: [
               Expanded(
-                child: Stack(
-                  children: [
-                    MapWidget(
-                      cameraOptions: CameraOptions(
-                        center: Point(coordinates: Position(139.767, 35.681)),
-                        zoom: 12,
-                        bearing: 0,
-                        pitch: 0,
-                      ),
-                      onMapCreated: _onMapCreated,
-                      onStyleLoadedListener: _onStyleLoaded,
-                      onTapListener: _onMapTap,
-                      gestureRecognizers: drawingState.isDrawingMode
-                          ? {}
-                          : null,
-                    ),
-                    if (_mapboxMap != null)
-                      IgnorePointer(
-                        ignoring: !drawingState.isDrawingMode,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onPanStart: _onPanStart,
-                          onPanUpdate: _onPanUpdate,
-                          onPanEnd: _onPanEnd,
-                          child: Stack(
-                            children: [
-                              Container(color: Colors.transparent),
-                              if (_eraserPosition != null)
-                                Positioned(
-                                  left:
-                                      _eraserPosition!.dx -
-                                      drawingState.strokeWidth * 2,
-                                  top:
-                                      _eraserPosition!.dy -
-                                      drawingState.strokeWidth * 2,
-                                  child: Container(
-                                    width: drawingState.strokeWidth * 4,
-                                    height: drawingState.strokeWidth * 4,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: Colors.black.withValues(
-                                          alpha: 0.5,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    if ((_mapViewportHeight - constraints.maxHeight).abs() >
+                        0.5) {
+                      _mapViewportHeight = constraints.maxHeight;
+                    }
+
+                    return Stack(
+                      children: [
+                        MapWidget(
+                          cameraOptions: CameraOptions(
+                            center: Point(
+                              coordinates: Position(139.767, 35.681),
+                            ),
+                            zoom: 12,
+                            bearing: 0,
+                            pitch: 0,
+                          ),
+                          onMapCreated: _onMapCreated,
+                          onStyleLoadedListener: _onStyleLoaded,
+                          onTapListener: _onMapTap,
+                          gestureRecognizers: drawingState.isDrawingMode
+                              ? {}
+                              : null,
+                        ),
+                        if (_mapboxMap != null)
+                          IgnorePointer(
+                            ignoring: !drawingState.isDrawingMode,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onPanStart: _onPanStart,
+                              onPanUpdate: _onPanUpdate,
+                              onPanEnd: _onPanEnd,
+                              child: Stack(
+                                children: [
+                                  Container(color: Colors.transparent),
+                                  if (_eraserPosition != null)
+                                    Positioned(
+                                      left:
+                                          _eraserPosition!.dx -
+                                          drawingState.strokeWidth * 2,
+                                      top:
+                                          _eraserPosition!.dy -
+                                          drawingState.strokeWidth * 2,
+                                      child: Container(
+                                        width: drawingState.strokeWidth * 4,
+                                        height: drawingState.strokeWidth * 4,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: colorScheme.onSurface
+                                                .withValues(alpha: 0.5),
+                                            width: 1.0,
+                                          ),
                                         ),
-                                        width: 1.0,
                                       ),
                                     ),
-                                  ),
-                                ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        PinList(onSheetSizeChanged: _onPinListExtentChanged),
+                        Positioned(
+                          right: 16,
+                          bottom: (_mapViewportHeight * _pinListExtent) + 8,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FloatingActionButton(
+                                heroTag: 'zoom_in',
+                                onPressed: () async {
+                                  final camera = await _mapboxMap
+                                      ?.getCameraState();
+                                  if (camera != null) {
+                                    _mapboxMap?.setCamera(
+                                      CameraOptions(zoom: camera.zoom + 1),
+                                    );
+                                  }
+                                },
+                                tooltip: 'Zoom in',
+                                child: const Icon(Icons.add),
+                              ),
+                              const SizedBox(height: 8),
+                              FloatingActionButton(
+                                heroTag: 'zoom_out',
+                                onPressed: () async {
+                                  final camera = await _mapboxMap
+                                      ?.getCameraState();
+                                  if (camera != null) {
+                                    _mapboxMap?.setCamera(
+                                      CameraOptions(zoom: camera.zoom - 1),
+                                    );
+                                  }
+                                },
+                                tooltip: 'Zoom out',
+                                child: const Icon(Icons.remove),
+                              ),
                             ],
                           ),
                         ),
-                      ),
-                    Positioned(
-                      right: 16,
-                      bottom: 40,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          FloatingActionButton(
-                            heroTag: 'zoom_in',
-                            onPressed: () async {
-                              final camera = await _mapboxMap?.getCameraState();
-                              if (camera != null) {
-                                _mapboxMap?.setCamera(
-                                  CameraOptions(zoom: camera.zoom + 1),
-                                );
-                              }
-                            },
-                            tooltip: 'Zoom in',
-                            child: const Icon(Icons.add),
-                          ),
-                          const SizedBox(height: 8),
-                          FloatingActionButton(
-                            heroTag: 'zoom_out',
-                            onPressed: () async {
-                              final camera = await _mapboxMap?.getCameraState();
-                              if (camera != null) {
-                                _mapboxMap?.setCamera(
-                                  CameraOptions(zoom: camera.zoom - 1),
-                                );
-                              }
-                            },
-                            tooltip: 'Zoom out',
-                            child: const Icon(Icons.remove),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
               ),
               const Controls(),
@@ -552,7 +586,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             child: AnimatedOpacity(
               opacity: _isDimmed ? 1.0 : 0.0,
               duration: const Duration(milliseconds: 200),
-              child: Container(color: Colors.black.withValues(alpha: 0.4)),
+              child: Container(color: colorScheme.scrim.withValues(alpha: 0.4)),
             ),
           ),
           // ピン選択時に浮き上がるピン
