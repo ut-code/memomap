@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
 import 'package:memomap/features/map/providers/current_map_provider.dart';
 import 'package:memomap/features/map/providers/map_provider.dart';
 import 'package:memomap/features/map/providers/pin_provider.dart';
 import 'package:memomap/features/map/providers/drawing_provider.dart';
-import 'package:memomap/features/map/presentation/widgets/drawing_canvas.dart';
+import 'package:memomap/features/map/models/drawing_path.dart';
 import 'package:memomap/features/map/presentation/widgets/controls.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:flutter/services.dart';
+import 'dart:math' as math;
+import 'dart:convert';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -20,30 +22,429 @@ class MapScreen extends ConsumerStatefulWidget {
 }
 
 class _MapScreenState extends ConsumerState<MapScreen> {
-  late final MapController _mapController;
+  MapboxMap? _mapboxMap;
+  PointAnnotationManager? pointAnnotationManager;
+  bool _isDimmed = false;
+  PinData? _activePin;
+  Offset? _activePinScreenPos;
+  Uint8List? _pinImageData;
+  List<LatLng> _currentLatLngs = [];
+  Offset? _eraserPosition;
+  final Map<String, PinData> _annotationToPin = {};
+  final Map<String, PointAnnotation> _pinToAnnotation = {};
+
+  double? _cachedZoom;
 
   @override
   void initState() {
     super.initState();
-    _mapController = MapController();
+    _loadPinImage();
+    MapboxMapsOptions.setLanguage("ja");
+  }
+
+  Future<void> _loadPinImage() async {
+    final ByteData bytes = await rootBundle.load('assets/pin.png');
+    _pinImageData = bytes.buffer.asUint8List();
+  }
+
+  Future<void> _onMapCreated(MapboxMap mapboxMap) async {
+    _mapboxMap = mapboxMap;
+    pointAnnotationManager = await mapboxMap.annotations
+        .createPointAnnotationManager();
+
+    pointAnnotationManager?.longPressEvents(
+      onLongPress: (annotation) {
+        _handlePinLongPress(annotation);
+      },
+    );
+
+    _updatePins();
+
+    setState(() {});
+  }
+
+  Future<void> _updatePins() async {
+    if (pointAnnotationManager == null || _pinImageData == null) return;
+
+    final pins = ref.read(pinsProvider).value ?? [];
+    final newPinIds = pins.map((p) => p.id).toSet();
+    final oldPinIds = _pinToAnnotation.keys.toSet();
+
+    final toRemove = oldPinIds.difference(newPinIds);
+    for (final pinId in toRemove) {
+      final annotation = _pinToAnnotation.remove(pinId);
+      if (annotation != null) {
+        _annotationToPin.remove(annotation.id);
+        await pointAnnotationManager!.delete(annotation);
+      }
+    }
+
+    final toAdd = pins.where((p) => !oldPinIds.contains(p.id));
+    for (final pin in toAdd) {
+      final annotation = await pointAnnotationManager!.create(
+        PointAnnotationOptions(
+          geometry: Point(
+            coordinates: Position(
+              pin.position.longitude,
+              pin.position.latitude,
+            ),
+          ),
+          image: _pinImageData,
+          iconSize: 0.5,
+          iconAnchor: IconAnchor.BOTTOM,
+        ),
+      );
+      _annotationToPin[annotation.id] = pin;
+      _pinToAnnotation[pin.id] = annotation;
+    }
+  }
+
+  Future<void> _handlePinLongPress(PointAnnotation annotation) async {
+    final pin = _annotationToPin[annotation.id];
+    if (pin == null || _mapboxMap == null) return;
+
+    final screenPos = await _mapboxMap!.pixelForCoordinate(
+      Point(
+        coordinates: Position(pin.position.longitude, pin.position.latitude),
+      ),
+    );
+
+    setState(() {
+      _isDimmed = true;
+      _activePin = pin;
+      _activePinScreenPos = Offset(
+        screenPos.x.toDouble(),
+        screenPos.y.toDouble(),
+      );
+    });
+
+    if (!mounted) return;
+
+    final selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        _activePinScreenPos!.dx,
+        _activePinScreenPos!.dy,
+        _activePinScreenPos!.dx,
+        _activePinScreenPos!.dy,
+      ),
+      items: const [
+        PopupMenuItem(
+          value: "delete",
+          child: Text("Delete", style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    );
+
+    if (mounted) {
+      setState(() {
+        _isDimmed = false;
+        _activePin = null;
+        _activePinScreenPos = null;
+      });
+    }
+
+    if (selected == "delete") {
+      ref.read(pinsProvider.notifier).deletePin(pin.id);
+    }
+  }
+
+  Future<void> _onStyleLoaded(StyleLoadedEventData data) async {
+    final style = _mapboxMap?.style;
+    if (style == null) return;
+
+    await style.addSource(GeoJsonSource(id: "existing_paths_source"));
+    await style.addLayer(
+      LineLayer(
+        id: "existing_paths_layer",
+        sourceId: "existing_paths_source",
+        lineJoin: LineJoin.ROUND,
+        lineCap: LineCap.ROUND,
+        lineOpacity: 1.0,
+      ),
+    );
+    await style.setStyleLayerProperty("existing_paths_layer", "line-color", [
+      "get",
+      "color",
+    ]);
+    await style.setStyleLayerProperty("existing_paths_layer", "line-width", [
+      "get",
+      "width",
+    ]);
+    await style.setStyleLayerProperty(
+      "existing_paths_layer", "line-opacity", 1.0,
+    );
+
+    await style.addSource(GeoJsonSource(id: "current_path_source"));
+    await style.addLayer(
+      LineLayer(
+        id: "current_path_layer",
+        sourceId: "current_path_source",
+        lineJoin: LineJoin.ROUND,
+        lineCap: LineCap.ROUND,
+        lineOpacity: 1.0,
+      ),
+    );
+
+    _updateLines();
+  }
+
+  String _colorToRgb(Color color) {
+    return 'rgba(${(color.r * 255.0).round().clamp(0, 255)}, ${(color.g * 255.0).round().clamp(0, 255)}, ${(color.b * 255.0).round().clamp(0, 255)}, ${color.a.toStringAsFixed(2)})';
+  }
+
+  Future<void> _updateLines() async {
+    final style = _mapboxMap?.style;
+    if (style == null) return;
+
+    final drawingState = ref.read(drawingProvider).valueOrNull;
+    if (drawingState == null) return;
+
+    final features = drawingState.paths.asMap().entries.map((entry) {
+      final index = entry.key;
+      final path = entry.value;
+      return Feature(
+        id: "path_$index",
+        geometry: LineString(
+          coordinates: path.points
+              .map((p) => Position(p.longitude, p.latitude))
+              .toList(),
+        ),
+        properties: {
+          "color": _colorToRgb(path.color),
+          "width": path.strokeWidth,
+        },
+      );
+    }).toList();
+
+    try {
+      final collection = FeatureCollection(features: features);
+      await style.setStyleSourceProperty(
+        "existing_paths_source",
+        "data",
+        jsonEncode(collection.toJson()),
+      );
+    } catch (e) {
+      debugPrint("Error updating existing_paths_source: $e");
+    }
+  }
+
+  Future<void> _updateCurrentPath() async {
+    final style = _mapboxMap?.style;
+    if (style == null) return;
+
+    final drawingState = ref.read(drawingProvider).valueOrNull;
+    if (drawingState == null) return;
+
+    final features = _currentLatLngs.isEmpty
+        ? <Feature>[]
+        : [
+            Feature(
+              id: "current_path",
+              geometry: LineString(
+                coordinates: _currentLatLngs
+                    .map((p) => Position(p.longitude, p.latitude))
+                    .toList(),
+              ),
+            ),
+          ];
+
+    try {
+      final collection = FeatureCollection(features: features);
+      await style.setStyleSourceProperty(
+        "current_path_source",
+        "data",
+        jsonEncode(collection.toJson()),
+      );
+
+      if (_currentLatLngs.isNotEmpty) {
+        await style.setStyleLayerProperty(
+          "current_path_layer",
+          "line-color",
+          _colorToRgb(drawingState.selectedColor),
+        );
+        await style.setStyleLayerProperty(
+          "current_path_layer",
+          "line-width",
+          drawingState.strokeWidth,
+        );
+        await style.setStyleLayerProperty(
+          "current_path_layer",
+          "line-opacity",
+          1.0,
+        );
+      }
+    } catch (e) {
+      debugPrint("Error updating current_path_source: $e");
+    }
+  }
+
+  void _onMapTap(MapContentGestureContext context) {
+    final drawingState = ref.read(drawingProvider).valueOrNull;
+    if (drawingState == null || drawingState.isDrawingMode) return;
+    final latLng = LatLng(
+      context.point.coordinates.lat.toDouble(),
+      context.point.coordinates.lng.toDouble(),
+    );
+    ref.read(pinsProvider.notifier).addPin(latLng);
+  }
+
+  Future<void> _convertToLatLng(Offset offset) async {
+    if (_mapboxMap == null) return;
+    final point = await _mapboxMap!.coordinateForPixel(
+      ScreenCoordinate(x: offset.dx, y: offset.dy),
+    );
+    if (mounted) {
+      setState(() {
+        _currentLatLngs.add(
+          LatLng(
+            point.coordinates.lat.toDouble(),
+            point.coordinates.lng.toDouble(),
+          ),
+        );
+      });
+    }
+  }
+
+  Future<void> _handleEraser(Offset localPosition) async {
+    if (_mapboxMap == null) return;
+    final drawingState = ref.read(drawingProvider).valueOrNull;
+    if (drawingState == null) return;
+    final drawingNotifier = ref.read(drawingProvider.notifier);
+
+    final point = await _mapboxMap!.coordinateForPixel(
+      ScreenCoordinate(x: localPosition.dx, y: localPosition.dy),
+    );
+    final latLng = LatLng(
+      point.coordinates.lat.toDouble(),
+      point.coordinates.lng.toDouble(),
+    );
+
+    final zoom = _cachedZoom ?? (await _mapboxMap!.getCameraState()).zoom;
+
+    final distance = const Distance();
+
+    final metersPerPixel =
+        78271.51696 *
+        math.cos(latLng.latitude * math.pi / 180) /
+        math.pow(2, zoom);
+    final eraserRadius = (drawingState.strokeWidth * 2) * metersPerPixel;
+
+    List<DrawingPath> newPaths = [];
+    bool changed = false;
+
+    for (final path in drawingState.paths) {
+      List<LatLng> currentSegment = [];
+      bool pathModified = false;
+
+      for (final p in path.points) {
+        if (distance(latLng, p) < eraserRadius) {
+          if (currentSegment.length > 1) {
+            newPaths.add(
+              DrawingPath(
+                points: List.from(currentSegment),
+                color: path.color,
+                strokeWidth: path.strokeWidth,
+              ),
+            );
+          }
+          currentSegment = [];
+          pathModified = true;
+          changed = true;
+        } else {
+          currentSegment.add(p);
+        }
+      }
+
+      if (currentSegment.length > 1) {
+        newPaths.add(
+          DrawingPath(
+            points: currentSegment,
+            color: path.color,
+            strokeWidth: path.strokeWidth,
+          ),
+        );
+      } else if (!pathModified) {
+        newPaths.add(path);
+      }
+    }
+
+    if (changed) {
+      drawingNotifier.updateEraserPaths(newPaths);
+    }
+  }
+
+  Future<void> _onPanStart(DragStartDetails details) async {
+    final drawingState = ref.read(drawingProvider).valueOrNull;
+    if (drawingState == null) return;
+
+    if (drawingState.isEraserMode) {
+      ref.read(drawingProvider.notifier).startEraserOperation();
+      final cameraState = await _mapboxMap?.getCameraState();
+      _cachedZoom = cameraState?.zoom;
+      setState(() {
+        _eraserPosition = details.localPosition;
+      });
+      await _handleEraser(details.localPosition);
+      return;
+    }
+
+    _currentLatLngs = [];
+    await _convertToLatLng(details.localPosition);
+    await _updateCurrentPath();
+  }
+
+  Future<void> _onPanUpdate(DragUpdateDetails details) async {
+    final drawingState = ref.read(drawingProvider).valueOrNull;
+    if (drawingState == null) return;
+
+    if (drawingState.isEraserMode) {
+      setState(() {
+        _eraserPosition = details.localPosition;
+      });
+      await _handleEraser(details.localPosition);
+      return;
+    }
+
+    await _convertToLatLng(details.localPosition);
+    await _updateCurrentPath();
+  }
+
+  Future<void> _onPanEnd(DragEndDetails details) async {
+    final drawingState = ref.read(drawingProvider).valueOrNull;
+    if (drawingState == null) return;
+
+    if (drawingState.isEraserMode) {
+      ref.read(drawingProvider.notifier).finishEraserOperation();
+      _cachedZoom = null;
+      setState(() {
+        _eraserPosition = null;
+      });
+      return;
+    }
+
+    if (_currentLatLngs.length > 1) {
+      ref
+          .read(drawingProvider.notifier)
+          .addPath(
+            DrawingPath(
+              points: List.from(_currentLatLngs),
+              color: drawingState.selectedColor,
+              strokeWidth: drawingState.strokeWidth,
+            ),
+          );
+    }
+
+    _currentLatLngs = [];
+    await _updateCurrentPath();
+    setState(() {});
   }
 
   @override
   void dispose() {
-    _mapController.dispose();
+    _annotationToPin.clear();
+    _pinToAnnotation.clear();
     super.dispose();
-  }
-
-  List<Marker> _buildMarkers(List<PinData> pins) {
-    return pins.map((pin) {
-      return Marker(
-        point: pin.position,
-        width: 60,
-        height: 60,
-        alignment: Alignment.topCenter,
-        child: const Icon(Icons.location_pin, size: 60, color: Colors.red),
-      );
-    }).toList();
   }
 
   @override
@@ -53,11 +454,18 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final currentMapId = ref.watch(currentMapIdProvider);
     final currentMap = ref.watch(currentMapProvider);
     final mapsAsync = ref.watch(mapsProvider);
-    final pinsAsync = ref.watch(pinsProvider);
     final drawingStateAsync = ref.watch(drawingProvider);
     final drawingState = drawingStateAsync.valueOrNull;
     final isDrawingMode = drawingState?.isDrawingMode ?? false;
-    final paths = drawingState?.paths ?? [];
+    final strokeWidth = drawingState?.strokeWidth ?? 3.0;
+
+    ref.listen(drawingProvider.select((s) => s.valueOrNull?.paths), (previous, next) {
+      _updateLines();
+    });
+
+    ref.listen(pinsProvider, (previous, next) {
+      _updatePins();
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -93,134 +501,166 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
-            child: Stack(
-              children: [
-                FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: const LatLng(35.6895, 139.6917),
-                    initialZoom: 9.2,
-                    interactionOptions: InteractionOptions(
-                      flags: isDrawingMode
-                          ? InteractiveFlag.none
-                          : InteractiveFlag.all &
-                                ~InteractiveFlag.doubleTapZoom,
-                    ),
-                    onTap: (tapPosition, latlng) {
-                      if (!isDrawingMode && currentMap != null) {
-                        ref.read(pinsProvider.notifier).addPin(latlng);
-                      }
-                    },
-                  ),
+          Column(
+            children: [
+              Expanded(
+                child: Stack(
                   children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'dev.fleaflet.flutter_map.example',
-                    ),
-                    PolylineLayer(
-                      polylines: paths
-                          .map(
-                            (path) => Polyline(
-                              points: path.points,
-                              color: path.color,
-                              strokeWidth: path.strokeWidth,
-                            ),
-                          )
-                          .toList(),
-                    ),
-                    MarkerLayer(
-                      markers: pinsAsync.when(
-                        data: _buildMarkers,
-                        loading: () => [],
-                        error: (_, _) => [],
+                    MapWidget(
+                      styleUri: MapboxStyles.MAPBOX_STREETS,
+                      cameraOptions: CameraOptions(
+                        center: Point(coordinates: Position(139.767, 35.681)),
+                        zoom: 12,
+                        bearing: 0,
+                        pitch: 0,
                       ),
+                      onMapCreated: _onMapCreated,
+                      onStyleLoadedListener: _onStyleLoaded,
+                      onTapListener: _onMapTap,
+                      gestureRecognizers: isDrawingMode ? {} : null,
                     ),
-                    RichAttributionWidget(
-                      alignment: AttributionAlignment.bottomLeft,
-                      attributions: [
-                        TextSourceAttribution(
-                          'OpenStreetMap contributors',
-                          onTap: () => launchUrl(
-                            Uri.parse('https://openstreetmap.org/copyright'),
+                    if (_mapboxMap != null)
+                      IgnorePointer(
+                        ignoring: !isDrawingMode,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onPanStart: _onPanStart,
+                          onPanUpdate: _onPanUpdate,
+                          onPanEnd: _onPanEnd,
+                          child: Stack(
+                            children: [
+                              Container(color: Colors.transparent),
+                              if (_eraserPosition != null)
+                                Positioned(
+                                  left:
+                                      _eraserPosition!.dx -
+                                      strokeWidth * 2,
+                                  top:
+                                      _eraserPosition!.dy -
+                                      strokeWidth * 2,
+                                  child: Container(
+                                    width: strokeWidth * 4,
+                                    height: strokeWidth * 4,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                        width: 1.0,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
+                    Positioned(
+                      right: 16,
+                      bottom: 40,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FloatingActionButton(
+                            heroTag: 'zoom_in',
+                            onPressed: () async {
+                              final camera = await _mapboxMap?.getCameraState();
+                              if (camera != null) {
+                                _mapboxMap?.setCamera(
+                                  CameraOptions(zoom: camera.zoom + 1),
+                                );
+                              }
+                            },
+                            tooltip: 'Zoom in',
+                            child: const Icon(Icons.add),
+                          ),
+                          const SizedBox(height: 8),
+                          FloatingActionButton(
+                            heroTag: 'zoom_out',
+                            onPressed: () async {
+                              final camera = await _mapboxMap?.getCameraState();
+                              if (camera != null) {
+                                _mapboxMap?.setCamera(
+                                  CameraOptions(zoom: camera.zoom - 1),
+                                );
+                              }
+                            },
+                            tooltip: 'Zoom out',
+                            child: const Icon(Icons.remove),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-                IgnorePointer(
-                  ignoring: !isDrawingMode || currentMap == null,
-                  child: DrawingCanvas(mapController: _mapController),
-                ),
-                // Only show warning if no map is truly selected (not loading)
-                if (currentMap == null && currentMapId == null && !mapsAsync.isLoading)
-                  Positioned(
-                    top: 16,
-                    left: 16,
-                    right: 16,
-                    child: Material(
-                      elevation: 4,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.info_outline, color: Colors.amber),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Text('No map selected. Create or select a map to add pins and drawings.'),
-                            ),
-                            TextButton(
-                              onPressed: () => context.push('/maps'),
-                              child: const Text('Open Maps'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+              ),
+              const Controls(),
+            ],
+          ),
+          if (currentMap == null && currentMapId == null && !mapsAsync.isLoading)
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: Material(
+                elevation: 4,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade100,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                Positioned(
-                  right: 16,
-                  bottom: 16,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                  child: Row(
                     children: [
-                      FloatingActionButton(
-                        heroTag: 'zoom_in',
-                        onPressed: () => _mapController.move(
-                          _mapController.camera.center,
-                          _mapController.camera.zoom + 1,
-                        ),
-                        tooltip: 'Zoom in',
-                        child: const Icon(Icons.add),
+                      const Icon(Icons.info_outline, color: Colors.amber),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text('No map selected. Create or select a map to add pins and drawings.'),
                       ),
-                      const SizedBox(height: 8),
-                      FloatingActionButton(
-                        heroTag: 'zoom_out',
-                        onPressed: () => _mapController.move(
-                          _mapController.camera.center,
-                          _mapController.camera.zoom - 1,
-                        ),
-                        tooltip: 'Zoom out',
-                        child: const Icon(Icons.remove),
+                      TextButton(
+                        onPressed: () => context.push('/maps'),
+                        child: const Text('Open Maps'),
                       ),
                     ],
                   ),
                 ),
-              ],
+              ),
+            ),
+          IgnorePointer(
+            ignoring: !_isDimmed,
+            child: AnimatedOpacity(
+              opacity: _isDimmed ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              child: Container(color: Colors.black.withValues(alpha: 0.4)),
             ),
           ),
-          const Controls(),
+          if (_isDimmed && _activePin != null && _activePinScreenPos != null)
+            Positioned(
+              left: _activePinScreenPos!.dx - 18,
+              top: _activePinScreenPos!.dy - 36,
+              width: 36,
+              height: 36,
+              child: const _PinIcon(),
+            ),
         ],
       ),
+    );
+  }
+}
+
+class _PinIcon extends StatelessWidget {
+  const _PinIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.scale(
+      scale: 1.2,
+      alignment: Alignment.bottomCenter,
+      child: Image.asset('assets/pin.png', fit: BoxFit.contain),
     );
   }
 }
