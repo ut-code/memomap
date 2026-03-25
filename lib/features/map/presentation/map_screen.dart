@@ -63,10 +63,22 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     setState(() {});
   }
 
-  Future<void> _updatePins() async {
+  Future<void> _updatePins({bool fullRebuild = false}) async {
     if (pointAnnotationManager == null || _pinImageData == null) return;
 
     final pins = ref.read(pinsProvider).value ?? [];
+
+    if (fullRebuild) {
+      await pointAnnotationManager!.deleteAll();
+      _annotationToPin.clear();
+      _pinToAnnotation.clear();
+
+      for (final pin in pins) {
+        await _createPinAnnotation(pin);
+      }
+      return;
+    }
+
     final newPinIds = pins.map((p) => p.id).toSet();
     final oldPinIds = _pinToAnnotation.keys.toSet();
 
@@ -81,22 +93,26 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     final toAdd = pins.where((p) => !oldPinIds.contains(p.id));
     for (final pin in toAdd) {
-      final annotation = await pointAnnotationManager!.create(
-        PointAnnotationOptions(
-          geometry: Point(
-            coordinates: Position(
-              pin.position.longitude,
-              pin.position.latitude,
-            ),
-          ),
-          image: _pinImageData,
-          iconSize: 0.5,
-          iconAnchor: IconAnchor.BOTTOM,
-        ),
-      );
-      _annotationToPin[annotation.id] = pin;
-      _pinToAnnotation[pin.id] = annotation;
+      await _createPinAnnotation(pin);
     }
+  }
+
+  Future<void> _createPinAnnotation(PinData pin) async {
+    final annotation = await pointAnnotationManager!.create(
+      PointAnnotationOptions(
+        geometry: Point(
+          coordinates: Position(
+            pin.position.longitude,
+            pin.position.latitude,
+          ),
+        ),
+        image: _pinImageData,
+        iconSize: 0.5,
+        iconAnchor: IconAnchor.BOTTOM,
+      ),
+    );
+    _annotationToPin[annotation.id] = pin;
+    _pinToAnnotation[pin.id] = annotation;
   }
 
   Future<void> _handlePinLongPress(PointAnnotation annotation) async {
@@ -461,6 +477,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     ref.listen(drawingProvider.select((s) => s.valueOrNull?.paths), (previous, next) {
       _updateLines();
+    });
+
+    ref.listen(currentMapIdProvider, (previous, next) {
+      if (previous != next) {
+        _updatePins(fullRebuild: true);
+        _updateLines();
+      }
     });
 
     ref.listen(pinsProvider, (previous, next) {
