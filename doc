@@ -119,6 +119,16 @@
                                             "userId": {
                                                 "type": "string"
                                             },
+                                            "mapId": {
+                                                "anyOf": [
+                                                    {
+                                                        "type": "string"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            },
                                             "latitude": {
                                                 "type": "number"
                                             },
@@ -132,6 +142,7 @@
                                         "required": [
                                             "id",
                                             "userId",
+                                            "mapId",
                                             "latitude",
                                             "longitude",
                                             "createdAt"
@@ -199,6 +210,16 @@
                                         "userId": {
                                             "type": "string"
                                         },
+                                        "mapId": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
                                         "latitude": {
                                             "type": "number"
                                         },
@@ -212,6 +233,7 @@
                                     "required": [
                                         "id",
                                         "userId",
+                                        "mapId",
                                         "latitude",
                                         "longitude",
                                         "createdAt"
@@ -290,6 +312,16 @@
                                         "type": "number",
                                         "minimum": -180,
                                         "maximum": 180
+                                    },
+                                    "mapId": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
                                     }
                                 },
                                 "required": [
@@ -403,6 +435,16 @@
                                             "userId": {
                                                 "type": "string"
                                             },
+                                            "mapId": {
+                                                "anyOf": [
+                                                    {
+                                                        "type": "string"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            },
                                             "latitude": {
                                                 "type": "number"
                                             },
@@ -416,6 +458,7 @@
                                         "required": [
                                             "id",
                                             "userId",
+                                            "mapId",
                                             "latitude",
                                             "longitude",
                                             "createdAt"
@@ -500,6 +543,16 @@
                                                     "type": "number",
                                                     "minimum": -180,
                                                     "maximum": 180
+                                                },
+                                                "mapId": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "string"
+                                                        },
+                                                        {
+                                                            "type": "null"
+                                                        }
+                                                    ]
                                                 }
                                             },
                                             "required": [
@@ -517,6 +570,1036 @@
                         }
                     }
                 }
+            }
+        },
+        "/api/drawings": {
+            "get": {
+                "operationId": "getApiDrawings",
+                "tags": [
+                    "drawings"
+                ],
+                "summary": "Get all drawings for current user",
+                "responses": {
+                    "200": {
+                        "description": "List of drawings",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {
+                                                "type": "string"
+                                            },
+                                            "userId": {
+                                                "type": "string"
+                                            },
+                                            "mapId": {
+                                                "anyOf": [
+                                                    {
+                                                        "type": "string"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            },
+                                            "points": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "lat": {
+                                                            "type": "number"
+                                                        },
+                                                        "lng": {
+                                                            "type": "number"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "lat",
+                                                        "lng"
+                                                    ]
+                                                }
+                                            },
+                                            "color": {
+                                                "type": "string"
+                                            },
+                                            "strokeWidth": {
+                                                "type": "number"
+                                            },
+                                            "createdAt": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "id",
+                                            "userId",
+                                            "mapId",
+                                            "points",
+                                            "color",
+                                            "strokeWidth",
+                                            "createdAt"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "operationId": "postApiDrawings",
+                "tags": [
+                    "drawings"
+                ],
+                "summary": "Create a new drawing",
+                "responses": {
+                    "201": {
+                        "description": "Drawing created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "userId": {
+                                            "type": "string"
+                                        },
+                                        "mapId": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "points": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "lat": {
+                                                        "type": "number"
+                                                    },
+                                                    "lng": {
+                                                        "type": "number"
+                                                    }
+                                                },
+                                                "required": [
+                                                    "lat",
+                                                    "lng"
+                                                ]
+                                            }
+                                        },
+                                        "color": {
+                                            "type": "string"
+                                        },
+                                        "strokeWidth": {
+                                            "type": "number"
+                                        },
+                                        "createdAt": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "id",
+                                        "userId",
+                                        "mapId",
+                                        "points",
+                                        "color",
+                                        "strokeWidth",
+                                        "createdAt"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "points": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "lat": {
+                                                    "type": "number"
+                                                },
+                                                "lng": {
+                                                    "type": "number"
+                                                }
+                                            },
+                                            "required": [
+                                                "lat",
+                                                "lng"
+                                            ]
+                                        }
+                                    },
+                                    "color": {
+                                        "type": "string"
+                                    },
+                                    "strokeWidth": {
+                                        "type": "number",
+                                        "minimum": 0.1,
+                                        "maximum": 50
+                                    },
+                                    "mapId": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "points",
+                                    "color",
+                                    "strokeWidth"
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/drawings/{id}": {
+            "delete": {
+                "operationId": "deleteApiDrawingsById",
+                "tags": [
+                    "drawings"
+                ],
+                "summary": "Delete a drawing",
+                "responses": {
+                    "204": {
+                        "description": "Drawing deleted"
+                    },
+                    "400": {
+                        "description": "Invalid drawing ID",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "in": "path",
+                        "name": "id",
+                        "required": true
+                    }
+                ]
+            }
+        },
+        "/api/drawings/batch": {
+            "post": {
+                "operationId": "postApiDrawingsBatch",
+                "tags": [
+                    "drawings"
+                ],
+                "summary": "Create multiple drawings at once",
+                "responses": {
+                    "201": {
+                        "description": "Drawings created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {
+                                                "type": "string"
+                                            },
+                                            "userId": {
+                                                "type": "string"
+                                            },
+                                            "mapId": {
+                                                "anyOf": [
+                                                    {
+                                                        "type": "string"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            },
+                                            "points": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "lat": {
+                                                            "type": "number"
+                                                        },
+                                                        "lng": {
+                                                            "type": "number"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "lat",
+                                                        "lng"
+                                                    ]
+                                                }
+                                            },
+                                            "color": {
+                                                "type": "string"
+                                            },
+                                            "strokeWidth": {
+                                                "type": "number"
+                                            },
+                                            "createdAt": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "id",
+                                            "userId",
+                                            "mapId",
+                                            "points",
+                                            "color",
+                                            "strokeWidth",
+                                            "createdAt"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "drawings": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "points": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "lat": {
+                                                                "type": "number"
+                                                            },
+                                                            "lng": {
+                                                                "type": "number"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "lat",
+                                                            "lng"
+                                                        ]
+                                                    }
+                                                },
+                                                "color": {
+                                                    "type": "string"
+                                                },
+                                                "strokeWidth": {
+                                                    "type": "number",
+                                                    "minimum": 0.1,
+                                                    "maximum": 50
+                                                },
+                                                "mapId": {
+                                                    "anyOf": [
+                                                        {
+                                                            "type": "string"
+                                                        },
+                                                        {
+                                                            "type": "null"
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "points",
+                                                "color",
+                                                "strokeWidth"
+                                            ]
+                                        },
+                                        "maxItems": 100
+                                    }
+                                },
+                                "required": [
+                                    "drawings"
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/maps": {
+            "get": {
+                "operationId": "getApiMaps",
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Get all maps for current user",
+                "responses": {
+                    "200": {
+                        "description": "List of maps",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {
+                                                "type": "string"
+                                            },
+                                            "userId": {
+                                                "type": "string"
+                                            },
+                                            "name": {
+                                                "type": "string"
+                                            },
+                                            "description": {
+                                                "anyOf": [
+                                                    {
+                                                        "type": "string"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            },
+                                            "createdAt": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "id",
+                                            "userId",
+                                            "name",
+                                            "description",
+                                            "createdAt"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "operationId": "postApiMaps",
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Create a new map",
+                "responses": {
+                    "201": {
+                        "description": "Map created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "userId": {
+                                            "type": "string"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "description": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "createdAt": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "id",
+                                        "userId",
+                                        "name",
+                                        "description",
+                                        "createdAt"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                    },
+                                    "description": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "maxLength": 500
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "name"
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/maps/{id}": {
+            "put": {
+                "operationId": "putApiMapsById",
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Update a map",
+                "responses": {
+                    "200": {
+                        "description": "Map updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "userId": {
+                                            "type": "string"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "description": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "string"
+                                                },
+                                                {
+                                                    "type": "null"
+                                                }
+                                            ]
+                                        },
+                                        "createdAt": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "id",
+                                        "userId",
+                                        "name",
+                                        "description",
+                                        "createdAt"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Map not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 100
+                                    },
+                                    "description": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "maxLength": 500
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    }
+                                },
+                                "required": []
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "in": "path",
+                        "name": "id",
+                        "required": true
+                    }
+                ]
+            },
+            "delete": {
+                "operationId": "deleteApiMapsById",
+                "tags": [
+                    "maps"
+                ],
+                "summary": "Delete a map (and all associated pins/drawings)",
+                "responses": {
+                    "204": {
+                        "description": "Map deleted"
+                    },
+                    "400": {
+                        "description": "Invalid map ID",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "error"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "in": "path",
+                        "name": "id",
+                        "required": true
+                    }
+                ]
             }
         }
     },

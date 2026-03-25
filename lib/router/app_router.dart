@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:memomap/features/auth/presentation/login_screen.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
+import 'package:memomap/features/map/presentation/map_list_screen.dart';
 import 'package:memomap/features/map/presentation/map_screen.dart';
 import 'package:memomap/features/profile/presentation/profile_screen.dart';
 
@@ -41,6 +42,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           if (auth == null) return null;
           return auth ? null : '/login';
         },
+      ),
+      GoRoute(
+        path: '/maps',
+        builder: (context, state) => const MapListScreen(),
       ),
       GoRoute(
         path: '/auth-callback',

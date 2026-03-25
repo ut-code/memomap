@@ -38,6 +38,9 @@ class BackendConfig {
   static Future<Dio> createDio() async {
     final dio = Dio(BaseOptions(
       baseUrl: url,
+      headers: {
+        if (!kIsWeb) 'Origin': url,
+      },
       extra: {'withCredentials': true},
     ));
 

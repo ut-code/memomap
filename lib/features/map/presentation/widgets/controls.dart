@@ -8,7 +8,8 @@ class Controls extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final drawingState = ref.watch(drawingProvider);
+    final drawingStateAsync = ref.watch(drawingProvider);
+    final drawingState = drawingStateAsync.valueOrNull;
     final drawingNotifier = ref.read(drawingProvider.notifier);
     final colorScheme = Theme.of(context).colorScheme;
 

@@ -53,6 +53,9 @@ dependencies:
   google_sign_in: ^6.2.0
   google_sign_in_web: ^0.12.4
   jwt_decoder: ^2.0.1
+  shared_preferences: ^2.3.3
+  connectivity_plus: ^6.1.0
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
@@ -64,6 +67,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  mocktail: ^1.0.4
   swagger_parser: ^1.42.0
   build_runner: ^2.11.0
   json_serializable: ^6.12.0

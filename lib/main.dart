@@ -6,10 +6,8 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // ignore: non_constant_identifier_names
-  String ACCESS_TOKEN = const String.fromEnvironment("ACCESS_TOKEN");
-  MapboxOptions.setAccessToken(ACCESS_TOKEN);
   await dotenv.load(fileName: '.env');
+  MapboxOptions.setAccessToken(dotenv.env['MAPBOX_ACCESS_TOKEN'] ?? '');
 
   runApp(const ProviderScope(child: App()));
 }

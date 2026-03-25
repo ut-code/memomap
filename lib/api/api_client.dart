@@ -7,6 +7,8 @@ import 'package:dio/dio.dart';
 import 'clients/system_client.dart';
 import 'clients/user_client.dart';
 import 'clients/pins_client.dart';
+import 'clients/drawings_client.dart';
+import 'clients/maps_client.dart';
 
 /// Memomap API `v1.0.0`.
 ///
@@ -26,10 +28,16 @@ class ApiClient {
   SystemClient? _system;
   UserClient? _user;
   PinsClient? _pins;
+  DrawingsClient? _drawings;
+  MapsClient? _maps;
 
   SystemClient get system => _system ??= SystemClient(_dio, baseUrl: _baseUrl);
 
   UserClient get user => _user ??= UserClient(_dio, baseUrl: _baseUrl);
 
   PinsClient get pins => _pins ??= PinsClient(_dio, baseUrl: _baseUrl);
+
+  DrawingsClient get drawings => _drawings ??= DrawingsClient(_dio, baseUrl: _baseUrl);
+
+  MapsClient get maps => _maps ??= MapsClient(_dio, baseUrl: _baseUrl);
 }
