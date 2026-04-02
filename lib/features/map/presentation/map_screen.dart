@@ -7,6 +7,7 @@ import 'package:memomap/features/map/providers/current_map_provider.dart';
 import 'package:memomap/features/map/providers/map_provider.dart';
 import 'package:memomap/features/map/providers/pin_provider.dart';
 import 'package:memomap/features/map/providers/drawing_provider.dart';
+import 'package:memomap/features/map/providers/map_bounds_provider.dart';
 import 'package:memomap/features/map/models/drawing_path.dart';
 import 'package:memomap/features/map/presentation/widgets/controls.dart';
 import 'package:memomap/features/map/presentation/widgets/pin_list.dart';
@@ -14,6 +15,7 @@ import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
 import 'dart:convert';
+import 'dart:async';
 
 class MapScreen extends ConsumerStatefulWidget {
   const MapScreen({super.key});
@@ -37,12 +39,18 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   final Map<String, PointAnnotation> _pinToAnnotation = {};
 
   double? _cachedZoom;
+  Timer? _boundsUpdateTimer;
 
   @override
   void initState() {
     super.initState();
     _loadPinImage();
     MapboxMapsOptions.setLanguage("ja");
+
+    // 定期的に地図の表示範囲を更新
+    _boundsUpdateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _updateMapBounds();
+    });
   }
 
   Future<void> _loadPinImage() async {
@@ -69,6 +77,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     );
 
     _updatePins();
+    _updateMapBounds();
 
     setState(() {});
   }
@@ -78,6 +87,38 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     setState(() {
       _pinListExtent = extent;
     });
+  }
+
+  Future<void> _updateMapBounds() async {
+    if (_mapboxMap == null || !mounted) return;
+
+    // 画面サイズを取得
+    final screenSize = MediaQuery.of(context).size;
+
+    // 画面中心と左上のピクセル座標を緯度経度に変換
+    final center = await _mapboxMap!.coordinateForPixel(
+      ScreenCoordinate(x: screenSize.width / 2, y: screenSize.height / 2),
+    );
+    final topLeft = await _mapboxMap!.coordinateForPixel(
+      ScreenCoordinate(x: 0, y: 0),
+    );
+
+    // 中心から左上までの距離を計算（外接円の半径）
+    final centerLat = center.coordinates.lat;
+    final centerLng = center.coordinates.lng;
+    final topLeftLat = topLeft.coordinates.lat;
+    final topLeftLng = topLeft.coordinates.lng;
+
+    final latDiff = centerLat - topLeftLat;
+    final lngDiff = centerLng - topLeftLng;
+    final radius = math.sqrt(latDiff * latDiff + lngDiff * lngDiff).toDouble();
+
+    final bounds = MapBounds(
+      center: LatLng(centerLat.toDouble(), centerLng.toDouble()),
+      radius: radius,
+    );
+
+    ref.read(mapBoundsProvider.notifier).state = bounds;
   }
 
   Future<void> _updatePins({bool fullRebuild = false}) async {
@@ -118,10 +159,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final annotation = await pointAnnotationManager!.create(
       PointAnnotationOptions(
         geometry: Point(
-          coordinates: Position(
-            pin.position.longitude,
-            pin.position.latitude,
-          ),
+          coordinates: Position(pin.position.longitude, pin.position.latitude),
         ),
         image: _pinImageData,
         iconSize: 0.5,
@@ -208,7 +246,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       "width",
     ]);
     await style.setStyleLayerProperty(
-      "existing_paths_layer", "line-opacity", 1.0,
+      "existing_paths_layer",
+      "line-opacity",
+      1.0,
     );
 
     await style.addSource(GeoJsonSource(id: "current_path_source"));
@@ -478,6 +518,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   @override
   void dispose() {
+    _boundsUpdateTimer?.cancel();
     _annotationToPin.clear();
     _pinToAnnotation.clear();
     super.dispose();
@@ -497,7 +538,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final isDrawingMode = drawingState?.isDrawingMode ?? false;
     final strokeWidth = drawingState?.strokeWidth ?? 3.0;
 
-    ref.listen(drawingProvider.select((s) => s.valueOrNull?.paths), (previous, next) {
+    ref.listen(drawingProvider.select((s) => s.valueOrNull?.paths), (
+      previous,
+      next,
+    ) {
       _updateLines();
     });
 
@@ -521,7 +565,10 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(currentMap?.name ?? (currentMapId != null ? 'Loading...' : 'Memomap')),
+              Text(
+                currentMap?.name ??
+                    (currentMapId != null ? 'Loading...' : 'Memomap'),
+              ),
               const SizedBox(width: 4),
               const Icon(Icons.arrow_drop_down, size: 20),
             ],
@@ -572,13 +619,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           onMapCreated: _onMapCreated,
                           onStyleLoadedListener: _onStyleLoaded,
                           onTapListener: _onMapTap,
-                          gestureRecognizers: drawingState.isDrawingMode
-                              ? {}
-                              : null,
+                          gestureRecognizers: isDrawingMode ? {} : null,
                         ),
                         if (_mapboxMap != null)
                           IgnorePointer(
-                            ignoring: !drawingState.isDrawingMode,
+                            ignoring: !isDrawingMode,
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onPanStart: _onPanStart,
@@ -590,14 +635,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                                   if (_eraserPosition != null)
                                     Positioned(
                                       left:
-                                          _eraserPosition!.dx -
-                                          drawingState.strokeWidth * 2,
+                                          _eraserPosition!.dx - strokeWidth * 2,
                                       top:
-                                          _eraserPosition!.dy -
-                                          drawingState.strokeWidth * 2,
+                                          _eraserPosition!.dy - strokeWidth * 2,
                                       child: Container(
-                                        width: drawingState.strokeWidth * 4,
-                                        height: drawingState.strokeWidth * 4,
+                                        width: strokeWidth * 4,
+                                        height: strokeWidth * 4,
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
                                           border: Border.all(
@@ -659,7 +702,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               const Controls(),
             ],
           ),
-          if (currentMap == null && currentMapId == null && !mapsAsync.isLoading)
+          if (currentMap == null &&
+              currentMapId == null &&
+              !mapsAsync.isLoading)
             Positioned(
               top: 16,
               left: 16,
@@ -678,7 +723,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       const Icon(Icons.info_outline, color: Colors.amber),
                       const SizedBox(width: 12),
                       const Expanded(
-                        child: Text('No map selected. Create or select a map to add pins and drawings.'),
+                        child: Text(
+                          'No map selected. Create or select a map to add pins and drawings.',
+                        ),
                       ),
                       TextButton(
                         onPressed: () => context.push('/maps'),
