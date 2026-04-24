@@ -113,6 +113,34 @@ void main() {
       });
     });
 
+    group('pendingTagUpdates', () {
+      test('should return empty map by default', () async {
+        when(() => mockStorage.getPendingTagUpdates())
+            .thenAnswer((_) async => <String, List<String>>{});
+
+        final updates = await mockStorage.getPendingTagUpdates();
+        expect(updates, isEmpty);
+      });
+
+      test('should store and retrieve pending tag updates', () async {
+        final updates = {
+          'pin-1': ['tag-a', 'tag-b'],
+          'pin-2': ['tag-c'],
+        };
+
+        when(() => mockStorage.setPendingTagUpdates(updates))
+            .thenAnswer((_) async {});
+        when(() => mockStorage.getPendingTagUpdates())
+            .thenAnswer((_) async => updates);
+
+        await mockStorage.setPendingTagUpdates(updates);
+        final retrieved = await mockStorage.getPendingTagUpdates();
+
+        expect(retrieved, updates);
+        verify(() => mockStorage.setPendingTagUpdates(updates)).called(1);
+      });
+    });
+
     group('clearAll', () {
       test('should clear all stored data', () async {
         when(() => mockStorage.clearAll())

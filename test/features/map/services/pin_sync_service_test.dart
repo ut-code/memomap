@@ -16,12 +16,20 @@ void main() {
     registerFallbackValue(const LatLng(0, 0));
     registerFallbackValue(<PinData>[]);
     registerFallbackValue(<String>[]);
+    registerFallbackValue(<String, List<String>>{});
   });
 
   setUp(() {
     mockStorage = MockLocalPinStorage();
     mockNetworkChecker = MockNetworkChecker();
     mockRepository = MockPinRepository();
+
+    // Default stubs for tag-update related methods added in tag feature.
+    // Individual tests can override as needed.
+    when(() => mockStorage.getPendingTagUpdates())
+        .thenAnswer((_) async => <String, List<String>>{});
+    when(() => mockStorage.setPendingTagUpdates(any()))
+        .thenAnswer((_) async {});
 
     syncService = PinSyncService(
       storage: mockStorage,
@@ -416,6 +424,376 @@ void main() {
 
         // Should not add to pending deletions since it was a local pin
         verifyNever(() => mockStorage.setPendingDeletions(any()));
+      });
+    });
+
+    group('updatePinTags', () {
+      test('updates local pin tagIds without calling server', () async {
+        final localPin = PinData(
+          id: 'local-1',
+          userId: null,
+          position: const LatLng(35.0, 139.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: true,
+          tagIds: const [],
+        );
+
+        when(() => mockStorage.getLocalPins())
+            .thenAnswer((_) async => [localPin]);
+        when(() => mockStorage.setLocalPins(any()))
+            .thenAnswer((_) async {});
+
+        final result = await syncService.updatePinTags(
+          pinId: 'local-1',
+          tagIds: ['t1', 't2'],
+          isAuthenticated: true,
+        );
+
+        expect(result?.id, 'local-1');
+        expect(result?.tagIds, ['t1', 't2']);
+
+        final captured =
+            verify(() => mockStorage.setLocalPins(captureAny())).captured;
+        final saved = captured.last as List<PinData>;
+        expect(saved.single.tagIds, ['t1', 't2']);
+
+        verifyNever(() => mockRepository.updatePinTags(any(), any()));
+      });
+
+      test('server pin: optimistic + server call when online + auth',
+          () async {
+        final serverPin = PinData(
+          id: 'srv-1',
+          userId: 'user-1',
+          position: const LatLng(35.0, 139.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: false,
+          tagIds: const ['old'],
+        );
+        final serverResult = serverPin.copyWith(tagIds: ['t1', 't2']);
+
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        // First call returns current cache; subsequent calls should reflect optimistic update.
+        final caches = <List<PinData>>[
+          [serverPin],
+          [serverPin.copyWith(tagIds: ['t1', 't2'])],
+        ];
+        var callIdx = 0;
+        when(() => mockStorage.getCachedPins())
+            .thenAnswer((_) async => caches[callIdx++]);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(() => mockRepository.updatePinTags('srv-1', ['t1', 't2']))
+            .thenAnswer((_) async => serverResult);
+
+        final result = await syncService.updatePinTags(
+          pinId: 'srv-1',
+          tagIds: ['t1', 't2'],
+          isAuthenticated: true,
+        );
+
+        expect(result?.id, 'srv-1');
+        expect(result?.tagIds, ['t1', 't2']);
+        verify(() => mockRepository.updatePinTags('srv-1', ['t1', 't2']))
+            .called(1);
+        // setCachedPins should have been called twice: optimistic + server response
+        verify(() => mockStorage.setCachedPins(any())).called(2);
+      });
+
+      test('server pin: offline queues pending tag update', () async {
+        final serverPin = PinData(
+          id: 'srv-1',
+          userId: 'user-1',
+          position: const LatLng(35.0, 139.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: false,
+          tagIds: const [],
+        );
+
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.getCachedPins())
+            .thenAnswer((_) async => [serverPin]);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => false);
+
+        final result = await syncService.updatePinTags(
+          pinId: 'srv-1',
+          tagIds: ['t1'],
+          isAuthenticated: true,
+        );
+
+        expect(result?.tagIds, ['t1']);
+        verifyNever(() => mockRepository.updatePinTags(any(), any()));
+
+        final captured =
+            verify(() => mockStorage.setPendingTagUpdates(captureAny()))
+                .captured;
+        final savedMap = captured.last as Map<String, List<String>>;
+        expect(savedMap, {'srv-1': ['t1']});
+      });
+
+      test('server pin: unauthenticated queues pending tag update', () async {
+        final serverPin = PinData(
+          id: 'srv-1',
+          userId: 'user-1',
+          position: const LatLng(35.0, 139.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: false,
+          tagIds: const [],
+        );
+
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.getCachedPins())
+            .thenAnswer((_) async => [serverPin]);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+
+        final result = await syncService.updatePinTags(
+          pinId: 'srv-1',
+          tagIds: ['t1'],
+          isAuthenticated: false,
+        );
+
+        expect(result?.tagIds, ['t1']);
+        verifyNever(() => mockRepository.updatePinTags(any(), any()));
+
+        final captured =
+            verify(() => mockStorage.setPendingTagUpdates(captureAny()))
+                .captured;
+        final savedMap = captured.last as Map<String, List<String>>;
+        expect(savedMap, {'srv-1': ['t1']});
+      });
+
+      test('server pin: server error queues pending update and returns optimistic',
+          () async {
+        final serverPin = PinData(
+          id: 'srv-1',
+          userId: 'user-1',
+          position: const LatLng(35.0, 139.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: false,
+          tagIds: const [],
+        );
+
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.getCachedPins())
+            .thenAnswer((_) async => [serverPin]);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(() => mockRepository.updatePinTags('srv-1', ['t1']))
+            .thenThrow(Exception('boom'));
+
+        final result = await syncService.updatePinTags(
+          pinId: 'srv-1',
+          tagIds: ['t1'],
+          isAuthenticated: true,
+        );
+
+        expect(result?.id, 'srv-1');
+        expect(result?.tagIds, ['t1']);
+
+        final captured =
+            verify(() => mockStorage.setPendingTagUpdates(captureAny()))
+                .captured;
+        final savedMap = captured.last as Map<String, List<String>>;
+        expect(savedMap, {'srv-1': ['t1']});
+      });
+    });
+
+    group('remapLocalTagIds', () {
+      test('does nothing when mapping is empty', () async {
+        await syncService.remapLocalTagIds({});
+
+        verifyNever(() => mockStorage.getLocalPins());
+        verifyNever(() => mockStorage.setLocalPins(any()));
+        verifyNever(() => mockStorage.getCachedPins());
+        verifyNever(() => mockStorage.setCachedPins(any()));
+        verifyNever(() => mockStorage.setPendingTagUpdates(any()));
+      });
+
+      test('remaps tagIds in local pins, cached pins, and pending updates',
+          () async {
+        final localPin = PinData(
+          id: 'local-1',
+          userId: null,
+          position: const LatLng(35.0, 139.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: true,
+          tagIds: const ['old-1', 'old-2', 'keep'],
+        );
+        final cachedPin = PinData(
+          id: 'srv-1',
+          userId: 'user-1',
+          position: const LatLng(36.0, 140.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: false,
+          tagIds: const ['old-1'],
+        );
+
+        when(() => mockStorage.getLocalPins())
+            .thenAnswer((_) async => [localPin]);
+        when(() => mockStorage.setLocalPins(any()))
+            .thenAnswer((_) async {});
+        when(() => mockStorage.getCachedPins())
+            .thenAnswer((_) async => [cachedPin]);
+        when(() => mockStorage.setCachedPins(any()))
+            .thenAnswer((_) async {});
+        when(() => mockStorage.getPendingTagUpdates()).thenAnswer(
+          (_) async => {'srv-1': ['old-1', 'keep']},
+        );
+
+        await syncService.remapLocalTagIds({
+          'old-1': 'new-1',
+          'old-2': 'new-2',
+        });
+
+        final localCaptured =
+            verify(() => mockStorage.setLocalPins(captureAny())).captured;
+        final savedLocal = localCaptured.last as List<PinData>;
+        expect(savedLocal.single.tagIds, ['new-1', 'new-2', 'keep']);
+
+        final cachedCaptured =
+            verify(() => mockStorage.setCachedPins(captureAny())).captured;
+        final savedCached = cachedCaptured.last as List<PinData>;
+        expect(savedCached.single.tagIds, ['new-1']);
+
+        final pendingCaptured =
+            verify(() => mockStorage.setPendingTagUpdates(captureAny()))
+                .captured;
+        final savedPending =
+            pendingCaptured.last as Map<String, List<String>>;
+        expect(savedPending, {'srv-1': ['new-1', 'keep']});
+      });
+
+      test('does not touch pending updates when empty', () async {
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
+        when(() => mockStorage.getCachedPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
+        when(() => mockStorage.getPendingTagUpdates())
+            .thenAnswer((_) async => <String, List<String>>{});
+
+        await syncService.remapLocalTagIds({'old': 'new'});
+
+        verifyNever(() => mockStorage.setPendingTagUpdates(any()));
+      });
+    });
+
+    group('syncWithServer with tag updates', () {
+      test('processes pending tag updates and clears queue on success',
+          () async {
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(() => mockStorage.getPendingDeletions())
+            .thenAnswer((_) async => []);
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.getPendingTagUpdates()).thenAnswer(
+          (_) async => {'srv-1': ['t1'], 'srv-2': ['t2']},
+        );
+        when(() => mockRepository.updatePinTags(any(), any()))
+            .thenAnswer((_) async => null);
+        when(() => mockRepository.getPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
+
+        await syncService.syncWithServer();
+
+        verify(() => mockRepository.updatePinTags('srv-1', ['t1'])).called(1);
+        verify(() => mockRepository.updatePinTags('srv-2', ['t2'])).called(1);
+
+        final captured =
+            verify(() => mockStorage.setPendingTagUpdates(captureAny()))
+                .captured;
+        final savedMap = captured.last as Map<String, List<String>>;
+        expect(savedMap, isEmpty);
+      });
+
+      test('keeps failed entries in the pending tag updates queue', () async {
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(() => mockStorage.getPendingDeletions())
+            .thenAnswer((_) async => []);
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.getPendingTagUpdates()).thenAnswer(
+          (_) async => {'srv-1': ['t1'], 'srv-2': ['t2']},
+        );
+        when(() => mockRepository.updatePinTags('srv-1', ['t1']))
+            .thenAnswer((_) async => null);
+        when(() => mockRepository.updatePinTags('srv-2', ['t2']))
+            .thenThrow(Exception('boom'));
+        when(() => mockRepository.getPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
+
+        await syncService.syncWithServer();
+
+        final captured =
+            verify(() => mockStorage.setPendingTagUpdates(captureAny()))
+                .captured;
+        final savedMap = captured.last as Map<String, List<String>>;
+        expect(savedMap, {'srv-2': ['t2']});
+      });
+
+      test('uploading local pins queues tagIds of uploaded pins', () async {
+        final localPinA = PinData(
+          id: 'local-A',
+          userId: null,
+          position: const LatLng(35.0, 139.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: true,
+          tagIds: const ['t1', 't2'],
+        );
+        final localPinB = PinData(
+          id: 'local-B',
+          userId: null,
+          position: const LatLng(36.0, 140.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: true,
+          tagIds: const [],
+        );
+        final uploadedA = PinData(
+          id: 'srv-A',
+          userId: 'user-1',
+          position: const LatLng(35.0, 139.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: false,
+        );
+        final uploadedB = PinData(
+          id: 'srv-B',
+          userId: 'user-1',
+          position: const LatLng(36.0, 140.0),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: false,
+        );
+
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(() => mockStorage.getPendingDeletions())
+            .thenAnswer((_) async => []);
+        when(() => mockStorage.getLocalPins())
+            .thenAnswer((_) async => [localPinA, localPinB]);
+        when(() => mockRepository.uploadLocalPins([localPinA, localPinB]))
+            .thenAnswer((_) async => [uploadedA, uploadedB]);
+        when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
+        // First call: _uploadLocalPins reads (empty). Second: _processPendingTagUpdates reads new map.
+        final pendingCalls = <Map<String, List<String>>>[
+          {},
+          {'srv-A': ['t1', 't2']},
+        ];
+        var pendingIdx = 0;
+        when(() => mockStorage.getPendingTagUpdates())
+            .thenAnswer((_) async => pendingCalls[pendingIdx++]);
+        when(() => mockRepository.updatePinTags(any(), any()))
+            .thenAnswer((_) async => null);
+        when(() => mockRepository.getPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
+
+        await syncService.syncWithServer();
+
+        // setPendingTagUpdates called twice: first with the upload-queued map,
+        // then with the remaining after _processPendingTagUpdates finishes.
+        final captured =
+            verify(() => mockStorage.setPendingTagUpdates(captureAny()))
+                .captured;
+        final firstSaved = captured[0] as Map<String, List<String>>;
+        expect(firstSaved, {'srv-A': ['t1', 't2']});
+        // Only the A upload got queued; B had empty tagIds
+        expect(firstSaved.containsKey('srv-B'), false);
       });
     });
 

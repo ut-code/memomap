@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -11,7 +11,7 @@ import {
 } from "hono-openapi";
 import postgres from "postgres";
 import { type AuthEnv, createAuth } from "./auth";
-import { drawings, maps, pins } from "./db/schema";
+import { drawings, maps, pins, pinTags, tags } from "./db/schema";
 import {
 	BatchCreateDrawingsSchema,
 	CreateDrawingSchema,
@@ -33,6 +33,13 @@ import {
 	PinsArraySchema,
 	UserSchema,
 } from "./schemas/pin";
+import {
+	CreateTagSchema,
+	TagSchema,
+	TagsArraySchema,
+	UpdatePinSchema,
+	UpdateTagSchema,
+} from "./schemas/tag";
 
 type Bindings = AuthEnv & {
 	ALLOWED_ORIGINS?: string;
@@ -54,7 +61,7 @@ app.use(
 			];
 			return allowed.includes(origin) ? origin : allowed[0];
 		},
-		allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+		allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 		allowHeaders: ["Content-Type", "Authorization"],
 		credentials: true,
 		maxAge: 86400,
@@ -210,13 +217,36 @@ app.get(
 		const userId = c.get("userId");
 
 		try {
-			const data = await withDb(c.env.DATABASE_URL, (db) =>
-				db
+			const data = await withDb(c.env.DATABASE_URL, async (db) => {
+				const pinRows = await db
 					.select()
 					.from(pins)
 					.where(eq(pins.userId, userId))
-					.orderBy(desc(pins.createdAt)),
-			);
+					.orderBy(desc(pins.createdAt));
+
+				const pinIds = pinRows.map((p) => p.id);
+				const links = pinIds.length
+					? await db
+							.select()
+							.from(pinTags)
+							.where(inArray(pinTags.pinId, pinIds))
+					: [];
+
+				const byPin = new Map<string, string[]>();
+				for (const l of links) {
+					const arr = byPin.get(l.pinId);
+					if (arr) {
+						arr.push(l.tagId);
+					} else {
+						byPin.set(l.pinId, [l.tagId]);
+					}
+				}
+
+				return pinRows.map((p) => ({
+					...p,
+					tagIds: byPin.get(p.id) ?? [],
+				}));
+			});
 
 			console.log(
 				`[${new Date().toISOString()}] PINS END: GET /api/pins (${Date.now() - start}ms)`,
@@ -259,9 +289,7 @@ app.post(
 		const userId = c.get("userId");
 		const body = c.req.valid("json");
 
-		if (
-			!(await validateMapOwnership(c.env.DATABASE_URL, body.mapId, userId))
-		) {
+		if (!(await validateMapOwnership(c.env.DATABASE_URL, body.mapId, userId))) {
 			return c.json({ error: "Map not found" }, 404);
 		}
 
@@ -278,7 +306,7 @@ app.post(
 					.returning(),
 			);
 
-			return c.json(data, 201);
+			return c.json({ ...data, tagIds: [] }, 201);
 		} catch (error) {
 			console.error("Failed to add pin:", error);
 			return c.json({ error: "Failed to add pin" }, 500);
@@ -380,10 +408,325 @@ app.post(
 				db.insert(pins).values(pinsToInsert).returning(),
 			);
 
-			return c.json(data, 201);
+			return c.json(
+				data.map((p) => ({ ...p, tagIds: [] })),
+				201,
+			);
 		} catch (error) {
 			console.error("Failed to batch insert pins:", error);
 			return c.json({ error: "Failed to add pins" }, 500);
+		}
+	},
+);
+
+app.patch(
+	"/api/pins/:id",
+	describeRoute({
+		tags: ["pins"],
+		summary: "Update pin tags",
+		responses: {
+			200: {
+				description: "Pin updated",
+				content: { "application/json": { schema: resolver(PinSchema) } },
+			},
+			400: {
+				description: "Invalid request",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			404: {
+				description: "Pin not found",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	validator("json", UpdatePinSchema),
+	async (c) => {
+		const userId = c.get("userId");
+		const pinId = c.req.param("id");
+		const body = c.req.valid("json");
+
+		if (!pinId || !/^[0-9a-f-]{36}$/i.test(pinId)) {
+			return c.json({ error: "Invalid pin ID" }, 400);
+		}
+
+		try {
+			const result = await withDb(c.env.DATABASE_URL, async (db) => {
+				const [owned] = await db
+					.select({ id: pins.id })
+					.from(pins)
+					.where(and(eq(pins.id, pinId), eq(pins.userId, userId)))
+					.limit(1);
+				if (!owned) return null;
+
+				if (body.tagIds !== undefined) {
+					if (body.tagIds.length > 0) {
+						const valid = await db
+							.select({ id: tags.id })
+							.from(tags)
+							.where(
+								and(eq(tags.userId, userId), inArray(tags.id, body.tagIds)),
+							);
+						if (valid.length !== new Set(body.tagIds).size) {
+							return "invalid_tag" as const;
+						}
+					}
+					await db.delete(pinTags).where(eq(pinTags.pinId, pinId));
+					if (body.tagIds.length > 0) {
+						await db.insert(pinTags).values(
+							body.tagIds.map((tagId) => ({
+								pinId,
+								tagId,
+							})),
+						);
+					}
+				}
+
+				const [updated] = await db
+					.select()
+					.from(pins)
+					.where(eq(pins.id, pinId));
+				const links = await db
+					.select()
+					.from(pinTags)
+					.where(eq(pinTags.pinId, pinId));
+				return { ...updated, tagIds: links.map((l) => l.tagId) };
+			});
+
+			if (result === null) return c.json({ error: "Pin not found" }, 404);
+			if (result === "invalid_tag")
+				return c.json({ error: "Invalid tagIds" }, 400);
+			return c.json(result);
+		} catch (error) {
+			console.error("Failed to update pin:", error);
+			return c.json({ error: "Failed to update pin" }, 500);
+		}
+	},
+);
+
+// Tags API
+
+app.get(
+	"/api/tags",
+	describeRoute({
+		tags: ["tags"],
+		summary: "Get all tags for current user",
+		responses: {
+			200: {
+				description: "List of tags",
+				content: { "application/json": { schema: resolver(TagsArraySchema) } },
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	async (c) => {
+		const userId = c.get("userId");
+
+		try {
+			const data = await withDb(c.env.DATABASE_URL, (db) =>
+				db
+					.select()
+					.from(tags)
+					.where(eq(tags.userId, userId))
+					.orderBy(desc(tags.createdAt)),
+			);
+			return c.json(data);
+		} catch (error) {
+			console.error("Failed to get tags:", error);
+			return c.json({ error: "Failed to get tags" }, 500);
+		}
+	},
+);
+
+app.post(
+	"/api/tags",
+	describeRoute({
+		tags: ["tags"],
+		summary: "Create a new tag",
+		responses: {
+			201: {
+				description: "Tag created",
+				content: { "application/json": { schema: resolver(TagSchema) } },
+			},
+			400: {
+				description: "Invalid request",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			409: {
+				description: "Tag name already exists",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	validator("json", CreateTagSchema),
+	async (c) => {
+		const userId = c.get("userId");
+		const body = c.req.valid("json");
+
+		try {
+			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+				db
+					.insert(tags)
+					.values({
+						userId,
+						name: body.name,
+						color: body.color,
+					})
+					.returning(),
+			);
+			return c.json(data, 201);
+		} catch (error) {
+			// Postgres unique violation
+			const code = (error as { code?: string })?.code;
+			if (code === "23505") {
+				return c.json({ error: "Tag name already exists" }, 409);
+			}
+			console.error("Failed to create tag:", error);
+			return c.json({ error: "Failed to create tag" }, 500);
+		}
+	},
+);
+
+app.put(
+	"/api/tags/:id",
+	describeRoute({
+		tags: ["tags"],
+		summary: "Update a tag",
+		responses: {
+			200: {
+				description: "Tag updated",
+				content: { "application/json": { schema: resolver(TagSchema) } },
+			},
+			400: {
+				description: "Invalid request",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			404: {
+				description: "Tag not found",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			409: {
+				description: "Tag name already exists",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	validator("json", UpdateTagSchema),
+	async (c) => {
+		const userId = c.get("userId");
+		const tagId = c.req.param("id");
+		const body = c.req.valid("json");
+
+		if (!tagId || !/^[0-9a-f-]{36}$/i.test(tagId)) {
+			return c.json({ error: "Invalid tag ID" }, 400);
+		}
+
+		try {
+			const updateData: { name?: string; color?: string } = {};
+			if (body.name !== undefined) updateData.name = body.name;
+			if (body.color !== undefined) updateData.color = body.color;
+
+			if (Object.keys(updateData).length === 0) {
+				return c.json({ error: "No fields to update" }, 400);
+			}
+
+			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+				db
+					.update(tags)
+					.set(updateData)
+					.where(and(eq(tags.id, tagId), eq(tags.userId, userId)))
+					.returning(),
+			);
+
+			if (!data) {
+				return c.json({ error: "Tag not found" }, 404);
+			}
+			return c.json(data);
+		} catch (error) {
+			const code = (error as { code?: string })?.code;
+			if (code === "23505") {
+				return c.json({ error: "Tag name already exists" }, 409);
+			}
+			console.error("Failed to update tag:", error);
+			return c.json({ error: "Failed to update tag" }, 500);
+		}
+	},
+);
+
+app.delete(
+	"/api/tags/:id",
+	describeRoute({
+		tags: ["tags"],
+		summary: "Delete a tag",
+		responses: {
+			204: {
+				description: "Tag deleted",
+			},
+			400: {
+				description: "Invalid tag ID",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	async (c) => {
+		const userId = c.get("userId");
+		const tagId = c.req.param("id");
+
+		if (!tagId || !/^[0-9a-f-]{36}$/i.test(tagId)) {
+			return c.json({ error: "Invalid tag ID" }, 400);
+		}
+
+		try {
+			await withDb(c.env.DATABASE_URL, (db) =>
+				db.delete(tags).where(and(eq(tags.id, tagId), eq(tags.userId, userId))),
+			);
+			return c.body(null, 204);
+		} catch (error) {
+			console.error("Failed to delete tag:", error);
+			return c.json({ error: "Failed to delete tag" }, 500);
 		}
 	},
 );
@@ -463,9 +806,7 @@ app.post(
 		const userId = c.get("userId");
 		const body = c.req.valid("json");
 
-		if (
-			!(await validateMapOwnership(c.env.DATABASE_URL, body.mapId, userId))
-		) {
+		if (!(await validateMapOwnership(c.env.DATABASE_URL, body.mapId, userId))) {
 			return c.json({ error: "Map not found" }, 404);
 		}
 

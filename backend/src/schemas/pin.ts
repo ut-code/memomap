@@ -38,6 +38,7 @@ export const PinSchema = v.object({
 	latitude: v.number(),
 	longitude: v.number(),
 	createdAt: v.string(),
+	tagIds: v.array(v.string()),
 });
 
 export const PinsArraySchema = v.array(PinSchema);

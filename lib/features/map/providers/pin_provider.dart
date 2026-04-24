@@ -7,6 +7,7 @@ import 'package:memomap/features/map/data/network_checker.dart';
 import 'package:memomap/features/map/data/pin_repository.dart';
 import 'package:memomap/features/map/providers/current_map_provider.dart';
 import 'package:memomap/features/map/providers/map_provider.dart' show mapIdMappingProvider;
+import 'package:memomap/features/map/providers/tag_provider.dart' show tagIdMappingProvider;
 import 'package:memomap/features/map/services/pin_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -84,8 +85,22 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
       if (idMapping.isNotEmpty) {
         await syncService.remapLocalMapIds(idMapping);
       }
+      final tagMapping = ref.read(tagIdMappingProvider);
+      if (tagMapping.isNotEmpty) {
+        await syncService.remapLocalTagIds(tagMapping);
+      }
       _syncInBackground(syncService);
     }
+
+    // React to tag ID mapping updates (tags uploaded in background).
+    ref.listen(tagIdMappingProvider, (prev, next) async {
+      if (next.isNotEmpty && next != prev) {
+        final svc = await ref.read(pinSyncServiceProvider.future);
+        await svc.remapLocalTagIds(next);
+        final pins = await svc.getAllPins();
+        state = AsyncValue.data(_filterByCurrentMap(pins));
+      }
+    });
 
     return filteredPins;
   }
@@ -150,6 +165,44 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
         debugPrint('Failed to delete pin: $e\n$st');
       }
     }
+  }
+
+  Future<void> updatePinTags(String pinId, List<String> tagIds) async {
+    final isAuthenticated = ref.read(isAuthenticatedProvider);
+    final syncService = await ref.read(pinSyncServiceProvider.future);
+
+    final previous = state.value ?? [];
+    final idx = previous.indexWhere((p) => p.id == pinId);
+    if (idx < 0) return;
+
+    final optimistic = [...previous];
+    optimistic[idx] = previous[idx].copyWith(tagIds: tagIds);
+    state = AsyncValue.data(optimistic);
+
+    try {
+      await syncService.updatePinTags(
+        pinId: pinId,
+        tagIds: tagIds,
+        isAuthenticated: isAuthenticated,
+      );
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('Failed to update pin tags: $e\n$st');
+      }
+      state = AsyncValue.data(previous);
+    }
+  }
+
+  /// Remove a tag ID from the local state of all pins (used after a tag is deleted).
+  void removeTagFromAllPins(String tagId) {
+    final current = state.value;
+    if (current == null) return;
+    final updated = current
+        .map((p) => p.tagIds.contains(tagId)
+            ? p.copyWith(tagIds: p.tagIds.where((id) => id != tagId).toList())
+            : p)
+        .toList();
+    state = AsyncValue.data(updated);
   }
 
   Future<void> refresh() async {

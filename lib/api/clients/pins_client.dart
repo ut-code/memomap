@@ -6,8 +6,10 @@ import 'package:dio/dio.dart';
 import 'package:retrofit/retrofit.dart';
 
 import '../models/api_pins_batch_request_body.dart';
+import '../models/api_pins_id_request_body.dart';
 import '../models/api_pins_request_body.dart';
 import '../models/get_api_pins_response.dart';
+import '../models/patch_api_pins_id_response.dart';
 import '../models/post_api_pins_batch_response.dart';
 import '../models/post_api_pins_response.dart';
 
@@ -31,6 +33,13 @@ abstract class PinsClient {
   @DELETE('/api/pins/{id}')
   Future<void> deleteApiPinsById({
     @Path('id') required String id,
+  });
+
+  /// Update pin tags
+  @PATCH('/api/pins/{id}')
+  Future<PatchApiPinsIdResponse> patchApiPinsById({
+    @Path('id') required String id,
+    @Body() ApiPinsIdRequestBody? body,
   });
 
   /// Create multiple pins at once

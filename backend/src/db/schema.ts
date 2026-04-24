@@ -4,8 +4,10 @@ import {
 	doublePrecision,
 	jsonb,
 	pgTable,
+	primaryKey,
 	text,
 	timestamp,
+	uniqueIndex,
 	uuid,
 } from "drizzle-orm/pg-core";
 
@@ -100,15 +102,66 @@ export const pins = pgTable("pins", {
 	createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const pinsRelations = relations(pins, ({ one }) => ({
+export const pinsRelations = relations(pins, ({ one, many }) => ({
 	map: one(maps, {
 		fields: [pins.mapId],
 		references: [maps.id],
 	}),
+	pinTags: many(pinTags),
 }));
 
 export type Pin = typeof pins.$inferSelect;
 export type NewPin = typeof pins.$inferInsert;
+
+export const tags = pgTable(
+	"tags",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		color: text("color").notNull(),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+	},
+	(t) => ({
+		userNameUnique: uniqueIndex("tags_user_name_unique").on(t.userId, t.name),
+	}),
+);
+
+export type Tag = typeof tags.$inferSelect;
+export type NewTag = typeof tags.$inferInsert;
+
+export const tagsRelations = relations(tags, ({ many }) => ({
+	pinTags: many(pinTags),
+}));
+
+export const pinTags = pgTable(
+	"pin_tags",
+	{
+		pinId: uuid("pin_id")
+			.notNull()
+			.references(() => pins.id, { onDelete: "cascade" }),
+		tagId: uuid("tag_id")
+			.notNull()
+			.references(() => tags.id, { onDelete: "cascade" }),
+		createdAt: timestamp("created_at").defaultNow().notNull(),
+	},
+	(t) => ({
+		pk: primaryKey({ columns: [t.pinId, t.tagId] }),
+	}),
+);
+
+export const pinTagsRelations = relations(pinTags, ({ one }) => ({
+	pin: one(pins, {
+		fields: [pinTags.pinId],
+		references: [pins.id],
+	}),
+	tag: one(tags, {
+		fields: [pinTags.tagId],
+		references: [tags.id],
+	}),
+}));
 
 export const drawings = pgTable("drawings", {
 	id: uuid("id").primaryKey().defaultRandom(),

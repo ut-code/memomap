@@ -89,6 +89,67 @@ class PinSyncService {
     }
   }
 
+  Future<PinData?> updatePinTags({
+    required String pinId,
+    required List<String> tagIds,
+    required bool isAuthenticated,
+  }) async {
+    // Local (not-yet-uploaded) pin: update in local storage only.
+    final localPins = await storage.getLocalPins();
+    final localIdx = localPins.indexWhere((p) => p.id == pinId);
+    if (localIdx >= 0) {
+      final updated = localPins[localIdx].copyWith(tagIds: tagIds);
+      final newList = [...localPins];
+      newList[localIdx] = updated;
+      await storage.setLocalPins(newList);
+      return updated;
+    }
+
+    // Optimistic cache update.
+    final cached = await storage.getCachedPins();
+    final cacheIdx = cached.indexWhere((p) => p.id == pinId);
+    PinData? optimistic;
+    if (cacheIdx >= 0) {
+      optimistic = cached[cacheIdx].copyWith(tagIds: tagIds);
+      final newCache = [...cached];
+      newCache[cacheIdx] = optimistic;
+      await storage.setCachedPins(newCache);
+    }
+
+    final isOnline = await networkChecker.isOnline && isAuthenticated;
+    if (!isOnline) {
+      await _queuePendingTagUpdate(pinId, tagIds);
+      return optimistic;
+    }
+
+    try {
+      final updated = await repository.updatePinTags(pinId, tagIds);
+      if (updated != null) {
+        final refreshed = await storage.getCachedPins();
+        final idx = refreshed.indexWhere((p) => p.id == pinId);
+        if (idx >= 0) {
+          final newCache = [...refreshed];
+          newCache[idx] = updated;
+          await storage.setCachedPins(newCache);
+        }
+        return updated;
+      }
+      return optimistic;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Failed to update pin tags on server: $e');
+      }
+      await _queuePendingTagUpdate(pinId, tagIds);
+      return optimistic;
+    }
+  }
+
+  Future<void> _queuePendingTagUpdate(String pinId, List<String> tagIds) async {
+    final pending = await storage.getPendingTagUpdates();
+    pending[pinId] = tagIds;
+    await storage.setPendingTagUpdates(pending);
+  }
+
   Future<void> _removeFromCache(String pinId) async {
     final cachedPins = await storage.getCachedPins();
     await storage.setCachedPins(
@@ -107,18 +168,39 @@ class PinSyncService {
     final localPins = await storage.getLocalPins();
     final updated = localPins.map((pin) {
       if (pin.mapId != null && idMapping.containsKey(pin.mapId)) {
-        return PinData(
-          id: pin.id,
-          userId: pin.userId,
-          mapId: idMapping[pin.mapId],
-          position: pin.position,
-          createdAt: pin.createdAt,
-          isLocal: pin.isLocal,
-        );
+        return pin.copyWith(mapId: idMapping[pin.mapId]);
       }
       return pin;
     }).toList();
     await storage.setLocalPins(updated);
+  }
+
+  /// Remaps local tag IDs referenced in local pins and cached pins to new server tag IDs.
+  Future<void> remapLocalTagIds(Map<String, String> tagIdMapping) async {
+    if (tagIdMapping.isEmpty) return;
+
+    List<String> remap(List<String> ids) =>
+        ids.map((id) => tagIdMapping[id] ?? id).toList();
+
+    final localPins = await storage.getLocalPins();
+    await storage.setLocalPins(
+      localPins.map((p) => p.copyWith(tagIds: remap(p.tagIds))).toList(),
+    );
+
+    final cached = await storage.getCachedPins();
+    await storage.setCachedPins(
+      cached.map((p) => p.copyWith(tagIds: remap(p.tagIds))).toList(),
+    );
+
+    // Remap pending tag updates as well.
+    final pending = await storage.getPendingTagUpdates();
+    if (pending.isNotEmpty) {
+      final newPending = <String, List<String>>{};
+      pending.forEach((pinId, ids) {
+        newPending[pinId] = remap(ids);
+      });
+      await storage.setPendingTagUpdates(newPending);
+    }
   }
 
   Future<void> syncWithServer() async {
@@ -127,6 +209,7 @@ class PinSyncService {
 
     await _processPendingDeletions();
     await _uploadLocalPins();
+    await _processPendingTagUpdates();
     await _refreshCacheFromServer();
   }
 
@@ -155,13 +238,47 @@ class PinSyncService {
     if (localPins.isEmpty) return;
 
     try {
-      await repository.uploadLocalPins(localPins);
+      final uploaded = await repository.uploadLocalPins(localPins);
+
+      // For local pins that had tagIds, queue them as pending updates
+      // since the batch endpoint doesn't accept tag associations.
+      if (uploaded.length == localPins.length) {
+        final pending = await storage.getPendingTagUpdates();
+        for (var i = 0; i < localPins.length; i++) {
+          final localPin = localPins[i];
+          if (localPin.tagIds.isNotEmpty) {
+            pending[uploaded[i].id] = localPin.tagIds;
+          }
+        }
+        if (pending.isNotEmpty) {
+          await storage.setPendingTagUpdates(pending);
+        }
+      }
+
       await storage.setLocalPins([]);
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to upload local pins: $e');
       }
     }
+  }
+
+  Future<void> _processPendingTagUpdates() async {
+    final pending = await storage.getPendingTagUpdates();
+    if (pending.isEmpty) return;
+
+    final remaining = <String, List<String>>{};
+    for (final entry in pending.entries) {
+      try {
+        await repository.updatePinTags(entry.key, entry.value);
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('Failed to update pin tags ${entry.key}: $e');
+        }
+        remaining[entry.key] = entry.value;
+      }
+    }
+    await storage.setPendingTagUpdates(remaining);
   }
 
   Future<void> _refreshCacheFromServer() async {

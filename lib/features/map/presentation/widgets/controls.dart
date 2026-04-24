@@ -13,6 +13,10 @@ class Controls extends ConsumerWidget {
     final drawingNotifier = ref.read(drawingProvider.notifier);
     final colorScheme = Theme.of(context).colorScheme;
 
+    if (drawingState == null) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,

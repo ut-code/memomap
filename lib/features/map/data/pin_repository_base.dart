@@ -6,4 +6,5 @@ abstract interface class PinRepositoryBase {
   Future<PinData?> addPin(LatLng position, {String? mapId});
   Future<void> deletePin(String id);
   Future<List<PinData>> uploadLocalPins(List<PinData> localPins, {String? mapId});
+  Future<PinData?> updatePinTags(String pinId, List<String> tagIds);
 }

@@ -1,0 +1,25 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
+part of 'get_api_tags_response.dart';
+
+// **************************************************************************
+// JsonSerializableGenerator
+// **************************************************************************
+
+GetApiTagsResponse _$GetApiTagsResponseFromJson(Map<String, dynamic> json) =>
+    GetApiTagsResponse(
+      id: json['id'] as String,
+      userId: json['userId'] as String,
+      name: json['name'] as String,
+      color: json['color'] as String,
+      createdAt: json['createdAt'] as String,
+    );
+
+Map<String, dynamic> _$GetApiTagsResponseToJson(GetApiTagsResponse instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'userId': instance.userId,
+      'name': instance.name,
+      'color': instance.color,
+      'createdAt': instance.createdAt,
+    };

@@ -4,11 +4,11 @@
 
 import 'package:json_annotation/json_annotation.dart';
 
-part 'get_api_pins_response.g.dart';
+part 'patch_api_pins_id_response.g.dart';
 
 @JsonSerializable()
-class GetApiPinsResponse {
-  const GetApiPinsResponse({
+class PatchApiPinsIdResponse {
+  const PatchApiPinsIdResponse({
     required this.id,
     required this.userId,
     required this.mapId,
@@ -18,7 +18,7 @@ class GetApiPinsResponse {
     required this.tagIds,
   });
   
-  factory GetApiPinsResponse.fromJson(Map<String, Object?> json) => _$GetApiPinsResponseFromJson(json);
+  factory PatchApiPinsIdResponse.fromJson(Map<String, Object?> json) => _$PatchApiPinsIdResponseFromJson(json);
   
   final String id;
   final String userId;
@@ -28,5 +28,5 @@ class GetApiPinsResponse {
   final String createdAt;
   final List<String> tagIds;
 
-  Map<String, Object?> toJson() => _$GetApiPinsResponseToJson(this);
+  Map<String, Object?> toJson() => _$PatchApiPinsIdResponseToJson(this);
 }

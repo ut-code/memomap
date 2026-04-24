@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
 import 'package:memomap/features/map/providers/current_map_provider.dart';
 import 'package:memomap/features/map/providers/map_provider.dart';
+import 'package:memomap/features/map/providers/pin_filter_provider.dart';
 import 'package:memomap/features/map/providers/pin_provider.dart';
 import 'package:memomap/features/map/providers/drawing_provider.dart';
 import 'package:memomap/features/map/models/drawing_path.dart';
@@ -83,7 +84,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   Future<void> _updatePins({bool fullRebuild = false}) async {
     if (pointAnnotationManager == null || _pinImageData == null) return;
 
-    final pins = ref.read(pinsProvider).value ?? [];
+    final pins = ref.read(filteredPinsProvider).value ?? [];
 
     if (fullRebuild) {
       await pointAnnotationManager!.deleteAll();
@@ -508,7 +509,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       }
     });
 
-    ref.listen(pinsProvider, (previous, next) {
+    ref.listen(filteredPinsProvider, (previous, next) {
       _updatePins();
     });
 
@@ -572,13 +573,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           onMapCreated: _onMapCreated,
                           onStyleLoadedListener: _onStyleLoaded,
                           onTapListener: _onMapTap,
-                          gestureRecognizers: drawingState.isDrawingMode
-                              ? {}
-                              : null,
+                          gestureRecognizers: isDrawingMode ? {} : null,
                         ),
                         if (_mapboxMap != null)
                           IgnorePointer(
-                            ignoring: !drawingState.isDrawingMode,
+                            ignoring: !isDrawingMode,
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onPanStart: _onPanStart,
@@ -591,13 +590,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                                     Positioned(
                                       left:
                                           _eraserPosition!.dx -
-                                          drawingState.strokeWidth * 2,
+                                          strokeWidth * 2,
                                       top:
                                           _eraserPosition!.dy -
-                                          drawingState.strokeWidth * 2,
+                                          strokeWidth * 2,
                                       child: Container(
-                                        width: drawingState.strokeWidth * 4,
-                                        height: drawingState.strokeWidth * 4,
+                                        width: strokeWidth * 4,
+                                        height: strokeWidth * 4,
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
                                           border: Border.all(

@@ -13,6 +13,9 @@ abstract interface class LocalPinStorageBase {
   Future<List<String>> getPendingDeletions();
   Future<void> setPendingDeletions(List<String> ids);
 
+  Future<Map<String, List<String>>> getPendingTagUpdates();
+  Future<void> setPendingTagUpdates(Map<String, List<String>> updates);
+
   Future<String?> getLastUserId();
   Future<void> setLastUserId(String? userId);
 
@@ -23,6 +26,7 @@ class SharedPreferencesLocalPinStorage implements LocalPinStorageBase {
   static const _cachedPinsKey = 'memomap_cached_pins';
   static const _localPinsKey = 'memomap_local_pins';
   static const _pendingDeletionsKey = 'memomap_pending_deletions';
+  static const _pendingTagUpdatesKey = 'memomap_pending_pin_tag_updates';
   static const _lastUserIdKey = 'memomap_last_user_id';
 
   final SharedPreferencesAsync _prefs;
@@ -70,6 +74,21 @@ class SharedPreferencesLocalPinStorage implements LocalPinStorageBase {
   }
 
   @override
+  Future<Map<String, List<String>>> getPendingTagUpdates() async {
+    final jsonString = await _prefs.getString(_pendingTagUpdatesKey);
+    if (jsonString == null) return {};
+    final map = jsonDecode(jsonString) as Map<String, dynamic>;
+    return map.map(
+      (key, value) => MapEntry(key, (value as List<dynamic>).cast<String>()),
+    );
+  }
+
+  @override
+  Future<void> setPendingTagUpdates(Map<String, List<String>> updates) async {
+    await _prefs.setString(_pendingTagUpdatesKey, jsonEncode(updates));
+  }
+
+  @override
   Future<String?> getLastUserId() async {
     return _prefs.getString(_lastUserIdKey);
   }
@@ -89,6 +108,7 @@ class SharedPreferencesLocalPinStorage implements LocalPinStorageBase {
       _prefs.remove(_cachedPinsKey),
       _prefs.remove(_localPinsKey),
       _prefs.remove(_pendingDeletionsKey),
+      _prefs.remove(_pendingTagUpdatesKey),
     ]);
   }
 

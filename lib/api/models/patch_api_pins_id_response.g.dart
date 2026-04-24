@@ -1,14 +1,14 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'post_api_pins_batch_response.dart';
+part of 'patch_api_pins_id_response.dart';
 
 // **************************************************************************
 // JsonSerializableGenerator
 // **************************************************************************
 
-PostApiPinsBatchResponse _$PostApiPinsBatchResponseFromJson(
+PatchApiPinsIdResponse _$PatchApiPinsIdResponseFromJson(
   Map<String, dynamic> json,
-) => PostApiPinsBatchResponse(
+) => PatchApiPinsIdResponse(
   id: json['id'] as String,
   userId: json['userId'] as String,
   mapId: json['mapId'] as String?,
@@ -18,8 +18,8 @@ PostApiPinsBatchResponse _$PostApiPinsBatchResponseFromJson(
   tagIds: (json['tagIds'] as List<dynamic>).map((e) => e as String).toList(),
 );
 
-Map<String, dynamic> _$PostApiPinsBatchResponseToJson(
-  PostApiPinsBatchResponse instance,
+Map<String, dynamic> _$PatchApiPinsIdResponseToJson(
+  PatchApiPinsIdResponse instance,
 ) => <String, dynamic>{
   'id': instance.id,
   'userId': instance.userId,
