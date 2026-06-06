@@ -10,6 +10,7 @@ export type AuthEnv = {
   BETTER_AUTH_URL: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_ID_IOS?: string;
+  GOOGLE_CLIENT_ID_ANDROID?: string;
   GOOGLE_CLIENT_SECRET?: string;
 };
 
@@ -22,6 +23,7 @@ export function createAuth(env: AuthEnv) {
   const googleClientIds = [
     env.GOOGLE_CLIENT_ID,
     env.GOOGLE_CLIENT_ID_IOS,
+    env.GOOGLE_CLIENT_ID_ANDROID,
   ].filter((id): id is string => !!id);
 
   return betterAuth({
@@ -39,7 +41,7 @@ export function createAuth(env: AuthEnv) {
               clientId:
                 googleClientIds.length === 1
                   ? googleClientIds[0]
-                  : googleClientIds[1],
+                  : googleClientIds,
               clientSecret: env.GOOGLE_CLIENT_SECRET,
             }
           : undefined,
