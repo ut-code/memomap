@@ -74,6 +74,10 @@
               # Linux
               pkg-config
               gtk3
+
+              # Android emulator host GPU: libGL.so.1 dispatcher + Vulkan loader
+              libglvnd
+              vulkan-loader
             ];
 
             shellHook = ''
@@ -83,6 +87,13 @@
               # Fix TLS certificate issues for workerd (Cloudflare Workers)
               export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
               export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
+              # Android emulator GPU acceleration on NixOS.
+              # - libglvnd provides libGL.so.1 (dispatcher); /run/opengl-driver/lib has the mesa driver impl.
+              # - vulkan-loader provides libvulkan.so.1; XDG_DATA_DIRS lets it discover the mesa Vulkan ICDs.
+              # Without these the emulator falls back to swiftshader software rendering (~10 fps).
+              export LD_LIBRARY_PATH="${libglvnd}/lib:${vulkan-loader}/lib:/run/opengl-driver/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export XDG_DATA_DIRS="/run/opengl-driver/share''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 
               flutter config --android-sdk $ANDROID_SDK_ROOT
 
