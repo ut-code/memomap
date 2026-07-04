@@ -10,6 +10,7 @@ import 'package:memomap/features/map/providers/drawing_provider.dart';
 import 'package:memomap/features/map/models/drawing_path.dart';
 import 'package:memomap/features/map/presentation/widgets/controls.dart';
 import 'package:memomap/features/map/presentation/widgets/pin_list.dart';
+import 'package:memomap/features/map/presentation/widgets/pin_labels_overlay.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
@@ -35,6 +36,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   double _pinListExtent = 0.2;
   double _mapViewportHeight = 0;
   final Map<String, PointAnnotation> _pinToAnnotation = {};
+  final Map<String, Offset> _pinScreenPositions = {};
 
   double? _cachedZoom;
 
@@ -106,6 +108,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         _annotationToPin.remove(annotation.id);
         await pointAnnotationManager!.delete(annotation);
       }
+      _pinScreenPositions.remove(pinId);
     }
 
     final toAdd = pins.where((p) => !oldPinIds.contains(p.id));
@@ -130,6 +133,23 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     );
     _annotationToPin[annotation.id] = pin;
     _pinToAnnotation[pin.id] = annotation;
+
+    // Calculate screen position for label
+    if (_mapboxMap != null) {
+      try {
+        final screenPos = await _mapboxMap!.pixelForCoordinate(
+          Point(
+            coordinates: Position(pin.position.longitude, pin.position.latitude),
+          ),
+        );
+        _pinScreenPositions[pin.id] = Offset(
+          screenPos.x.toDouble(),
+          screenPos.y.toDouble(),
+        );
+      } catch (e) {
+        // Ignore errors in coordinate conversion
+      }
+    }
   }
 
   Future<void> _handlePinLongPress(PointAnnotation annotation) async {
@@ -163,9 +183,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       ),
       items: [
         PopupMenuItem(
+          value: "edit_name",
+          child: const Text("名前を編集"),
+        ),
+        PopupMenuItem(
           value: "delete",
           child: Text(
-            "Delete",
+            "削除",
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         ),
@@ -182,7 +206,42 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     if (selected == "delete") {
       ref.read(pinsProvider.notifier).deletePin(pin.id);
+    } else if (selected == "edit_name") {
+      _showPinNameEditDialog(pin);
     }
+  }
+
+  void _showPinNameEditDialog(PinData pin) {
+    final controller = TextEditingController(text: pin.name);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ピンの名前を編集'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'ピンの名前を入力',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final newName = controller.text.trim();
+              ref.read(pinsProvider.notifier).updatePinName(pin.id, newName);
+              Navigator.pop(context);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _onStyleLoaded(StyleLoadedEventData data) async {
@@ -572,13 +631,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           onMapCreated: _onMapCreated,
                           onStyleLoadedListener: _onStyleLoaded,
                           onTapListener: _onMapTap,
-                          gestureRecognizers: drawingState.isDrawingMode
+                          gestureRecognizers: isDrawingMode
                               ? {}
                               : null,
                         ),
                         if (_mapboxMap != null)
                           IgnorePointer(
-                            ignoring: !drawingState.isDrawingMode,
+                            ignoring: !isDrawingMode,
                             child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onPanStart: _onPanStart,
@@ -591,13 +650,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                                     Positioned(
                                       left:
                                           _eraserPosition!.dx -
-                                          drawingState.strokeWidth * 2,
+                                          strokeWidth * 2,
                                       top:
                                           _eraserPosition!.dy -
-                                          drawingState.strokeWidth * 2,
+                                          strokeWidth * 2,
                                       child: Container(
-                                        width: drawingState.strokeWidth * 4,
-                                        height: drawingState.strokeWidth * 4,
+                                        width: strokeWidth * 4,
+                                        height: strokeWidth * 4,
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
                                           border: Border.all(
@@ -611,6 +670,11 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                                 ],
                               ),
                             ),
+                          ),
+                        if ((ref.read(pinsProvider).value ?? []).isNotEmpty)
+                          PinLabelsOverlay(
+                            pins: ref.read(pinsProvider).value ?? [],
+                            pinScreenPositions: _pinScreenPositions,
                           ),
                         PinList(onSheetSizeChanged: _onPinListExtentChanged),
                         Positioned(

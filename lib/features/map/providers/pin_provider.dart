@@ -152,6 +152,42 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
     }
   }
 
+  Future<void> updatePinName(String id, String newName) async {
+    final pin = state.value?.where((p) => p.id == id).firstOrNull;
+    if (pin == null) return;
+
+    final isAuthenticated = ref.read(isAuthenticatedProvider);
+    final syncService = await ref.read(pinSyncServiceProvider.future);
+
+    // Optimistically update UI
+    final updatedPin = PinData(
+      id: pin.id,
+      userId: pin.userId,
+      mapId: pin.mapId,
+      position: pin.position,
+      createdAt: pin.createdAt,
+      isLocal: pin.isLocal,
+      name: newName,
+    );
+
+    state = AsyncValue.data(
+      (state.value ?? []).map((p) => p.id == id ? updatedPin : p).toList(),
+    );
+
+    try {
+      // Save to local storage
+      await syncService.updatePinName(pin: updatedPin, isAuthenticated: isAuthenticated);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('Failed to update pin name: $e\n$st');
+      }
+      // Revert on error
+      state = AsyncValue.data(
+        (state.value ?? []).map((p) => p.id == id ? pin : p).toList(),
+      );
+    }
+  }
+
   Future<void> refresh() async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(() => build());

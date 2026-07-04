@@ -18,6 +18,7 @@ PinData _createPinData({
   required num latitude,
   required num longitude,
   required String createdAt,
+  String? name,
 }) =>
     PinData(
       id: id,
@@ -25,6 +26,7 @@ PinData _createPinData({
       mapId: mapId,
       position: LatLng(latitude.toDouble(), longitude.toDouble()),
       createdAt: DateTime.parse(createdAt),
+      name: name ?? '',
     );
 
 extension GetApiPinsResponseExt on GetApiPinsResponse {
@@ -35,6 +37,7 @@ extension GetApiPinsResponseExt on GetApiPinsResponse {
         latitude: latitude,
         longitude: longitude,
         createdAt: createdAt,
+        name: name,
       );
 }
 
@@ -46,6 +49,7 @@ extension PostApiPinsResponseExt on PostApiPinsResponse {
         latitude: latitude,
         longitude: longitude,
         createdAt: createdAt,
+        name: name,
       );
 }
 
@@ -57,6 +61,7 @@ extension PostApiPinsBatchResponseExt on PostApiPinsBatchResponse {
         latitude: latitude,
         longitude: longitude,
         createdAt: createdAt,
+        name: name,
       );
 }
 
@@ -67,6 +72,7 @@ class PinData {
   final LatLng position;
   final DateTime createdAt;
   final bool isLocal;
+  final String name;
 
   PinData({
     required this.id,
@@ -75,9 +81,10 @@ class PinData {
     required this.position,
     required this.createdAt,
     this.isLocal = false,
+    this.name = '',
   });
 
-  factory PinData.local(LatLng position, {String? mapId}) {
+  factory PinData.local(LatLng position, {String? mapId, String name = ''}) {
     return PinData(
       id: const Uuid().v4(),
       userId: null,
@@ -85,6 +92,7 @@ class PinData {
       position: position,
       createdAt: DateTime.now(),
       isLocal: true,
+      name: name,
     );
   }
 
@@ -99,6 +107,7 @@ class PinData {
       ),
       createdAt: DateTime.parse(json['createdAt'] as String),
       isLocal: json['isLocal'] as bool? ?? false,
+      name: json['name'] as String? ?? '',
     );
   }
 
@@ -111,6 +120,7 @@ class PinData {
       'longitude': position.longitude,
       'createdAt': createdAt.toUtc().toIso8601String(),
       'isLocal': isLocal,
+      'name': name,
     };
   }
 }
@@ -181,5 +191,20 @@ class PinRepository implements PinRepositoryBase {
     );
 
     return response.map((r) => r.toPinData()).toList();
+  }
+
+  @override
+  Future<void> updatePin(PinData pin) async {
+    if (!await _isAuthenticated()) return;
+
+    await _api.pins.patchApiPinsById(
+      id: pin.id,
+      body: ApiPinsRequestBody(
+        latitude: pin.position.latitude,
+        longitude: pin.position.longitude,
+        mapId: pin.mapId,
+        name: pin.name,
+      ),
+    );
   }
 }

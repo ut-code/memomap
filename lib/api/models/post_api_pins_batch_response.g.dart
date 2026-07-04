@@ -15,6 +15,7 @@ PostApiPinsBatchResponse _$PostApiPinsBatchResponseFromJson(
   latitude: json['latitude'] as num,
   longitude: json['longitude'] as num,
   createdAt: json['createdAt'] as String,
+  name: json['name'] as String?,
 );
 
 Map<String, dynamic> _$PostApiPinsBatchResponseToJson(
@@ -26,4 +27,5 @@ Map<String, dynamic> _$PostApiPinsBatchResponseToJson(
   'latitude': instance.latitude,
   'longitude': instance.longitude,
   'createdAt': instance.createdAt,
+  'name': instance.name,
 };

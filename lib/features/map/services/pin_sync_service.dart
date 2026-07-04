@@ -101,6 +101,39 @@ class PinSyncService {
     await storage.setPendingDeletions([...pendingDeletions, pinId]);
   }
 
+  Future<void> updatePinName({
+    required PinData pin,
+    required bool isAuthenticated,
+  }) async {
+    if (pin.isLocal) {
+      // Update local pin in storage
+      final localPins = await storage.getLocalPins();
+      await storage.setLocalPins(
+        localPins.map((p) => p.id == pin.id ? pin : p).toList(),
+      );
+      return;
+    }
+
+    final isOnline = await networkChecker.isOnline && isAuthenticated;
+    
+    // Always update cache
+    final cachedPins = await storage.getCachedPins();
+    await storage.setCachedPins(
+      cachedPins.map((p) => p.id == pin.id ? pin : p).toList(),
+    );
+
+    if (isOnline) {
+      try {
+        await repository.updatePin(pin);
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('Failed to update pin name on server: $e');
+        }
+        // Name update is saved locally even if sync fails
+      }
+    }
+  }
+
   Future<void> remapLocalMapIds(Map<String, String> idMapping) async {
     if (idMapping.isEmpty) return;
 

@@ -12,6 +12,7 @@ class Pins {
     required this.latitude,
     required this.longitude,
     this.mapId,
+    this.name,
   });
   
   factory Pins.fromJson(Map<String, Object?> json) => _$PinsFromJson(json);
@@ -19,6 +20,7 @@ class Pins {
   final num latitude;
   final num longitude;
   final String? mapId;
+  final String? name;
 
   Map<String, Object?> toJson() => _$PinsToJson(this);
 }

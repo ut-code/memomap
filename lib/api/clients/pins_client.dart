@@ -38,4 +38,11 @@ abstract class PinsClient {
   Future<List<PostApiPinsBatchResponse>> postApiPinsBatch({
     @Body() ApiPinsBatchRequestBody? body,
   });
+
+  /// Update a pin
+  @PATCH('/api/pins/{id}')
+  Future<PostApiPinsResponse> patchApiPinsById({
+    @Path('id') required String id,
+    @Body() ApiPinsRequestBody? body,
+  });
 }

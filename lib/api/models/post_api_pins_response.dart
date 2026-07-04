@@ -15,6 +15,7 @@ class PostApiPinsResponse {
     required this.latitude,
     required this.longitude,
     required this.createdAt,
+    this.name,
   });
   
   factory PostApiPinsResponse.fromJson(Map<String, Object?> json) => _$PostApiPinsResponseFromJson(json);
@@ -25,6 +26,7 @@ class PostApiPinsResponse {
   final num latitude;
   final num longitude;
   final String createdAt;
+  final String? name;
 
   Map<String, Object?> toJson() => _$PostApiPinsResponseToJson(this);
 }

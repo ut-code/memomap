@@ -7,6 +7,42 @@ class PinList extends ConsumerWidget {
 
   final ValueChanged<double>? onSheetSizeChanged;
 
+  void _showPinNameDialog(
+    BuildContext context,
+    PinData pin,
+    PinsNotifier pinsNotifier,
+  ) {
+    final controller = TextEditingController(text: pin.name);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ピンの名前'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'ピンの名前を入力',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final newName = controller.text.trim();
+              pinsNotifier.updatePinName(pin.id, newName);
+              Navigator.pop(context);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pinsAsync = ref.watch(pinsProvider);
@@ -65,13 +101,17 @@ class PinList extends ConsumerWidget {
                           },
                           child: ListTile(
                             leading: Image.asset('assets/pin.png'),
-                            title: Text('ピン'),
+                            title: Text(
+                              pin.name.isEmpty ? 'ピン（名前未設定）' : pin.name,
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
                             subtitle: Text(
                               '緯度: ${pin.position.latitude.toStringAsFixed(4)}, 経度: ${pin.position.longitude.toStringAsFixed(4)}',
                             ),
                             trailing: pin.isLocal
                                 ? const Icon(Icons.cloud_off)
                                 : const Icon(Icons.cloud_outlined),
+                            onTap: () => _showPinNameDialog(context, pin, pinsNotifier),
                           ),
                         );
                       },

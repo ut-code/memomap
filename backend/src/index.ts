@@ -9,6 +9,7 @@ import {
 	resolver,
 	validator,
 } from "hono-openapi";
+import * as v from "valibot";
 import postgres from "postgres";
 import { type AuthEnv, createAuth } from "./auth";
 import { drawings, maps, pins } from "./db/schema";
@@ -29,6 +30,8 @@ import {
 	CreatePinSchema,
 	ErrorSchema,
 	HealthSchema,
+	LatitudeSchema,
+	LongitudeSchema,
 	PinSchema,
 	PinsArraySchema,
 	UserSchema,
@@ -54,7 +57,7 @@ app.use(
 			];
 			return allowed.includes(origin) ? origin : allowed[0];
 		},
-		allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+		allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
 		allowHeaders: ["Content-Type", "Authorization"],
 		credentials: true,
 		maxAge: 86400,
@@ -274,6 +277,7 @@ app.post(
 						mapId: body.mapId ?? null,
 						latitude: body.latitude,
 						longitude: body.longitude,
+						name: body.name ?? "",
 					})
 					.returning(),
 			);
@@ -331,6 +335,71 @@ app.delete(
 	},
 );
 
+app.patch(
+	"/api/pins/:id",
+	describeRoute({
+		tags: ["pins"],
+		summary: "Update a pin",
+		responses: {
+			200: {
+				description: "Pin updated",
+				content: { "application/json": { schema: resolver(PinSchema) } },
+			},
+			400: {
+				description: "Invalid pin ID",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	async (c) => {
+		const userId = c.get("userId");
+		const pinId = c.req.param("id");
+
+		if (!pinId || !/^[0-9a-f-]{36}$/i.test(pinId)) {
+			return c.json({ error: "Invalid pin ID" }, 400);
+		}
+
+		try {
+			const body = await c.req.json();
+			const updates: any = {};
+			
+			if (body.name !== undefined) updates.name = body.name;
+			if (body.latitude !== undefined) updates.latitude = body.latitude;
+			if (body.longitude !== undefined) updates.longitude = body.longitude;
+
+			if (Object.keys(updates).length === 0) {
+				return c.json({ error: "No fields to update" }, 400);
+			}
+
+			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+				db
+					.update(pins)
+					.set(updates)
+					.where(and(eq(pins.id, pinId), eq(pins.userId, userId)))
+					.returning(),
+			);
+
+			if (!data) {
+				return c.json({ error: "Pin not found" }, 404);
+			}
+
+			return c.json(data, 200);
+		} catch (error) {
+			console.error("Failed to update pin:", error);
+			return c.json({ error: "Failed to update pin" }, 500);
+		}
+	},
+);
+
 app.post(
 	"/api/pins/batch",
 	describeRoute({
@@ -373,6 +442,7 @@ app.post(
 			mapId: pin.mapId ?? null,
 			latitude: pin.latitude,
 			longitude: pin.longitude,
+			name: pin.name ?? "",
 		}));
 
 		try {

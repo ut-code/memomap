@@ -14,6 +14,7 @@ GetApiPinsResponse _$GetApiPinsResponseFromJson(Map<String, dynamic> json) =>
       latitude: json['latitude'] as num,
       longitude: json['longitude'] as num,
       createdAt: json['createdAt'] as String,
+      name: json['name'] as String?,
     );
 
 Map<String, dynamic> _$GetApiPinsResponseToJson(GetApiPinsResponse instance) =>
@@ -24,4 +25,5 @@ Map<String, dynamic> _$GetApiPinsResponseToJson(GetApiPinsResponse instance) =>
       'latitude': instance.latitude,
       'longitude': instance.longitude,
       'createdAt': instance.createdAt,
+      'name': instance.name,
     };
