@@ -3,6 +3,11 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    # Pinned to nixos-25.11 for a mesa build compatible with the androidenv
+    # emulator's glibc 2.40. Newer mesa (in nixpkgs-unstable) requires
+    # GLIBC_ABI_GNU2_TLS from glibc >= 2.41, which the bundled emulator lacks,
+    # forcing a fallback to CPU (llvmpipe) Vulkan and breaking GL init.
+    nixpkgs-mesa-compat.url = "github:NixOS/nixpkgs/b6018f87da91d19d0ab4cf979885689b469cdd41";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -10,6 +15,7 @@
     {
       self,
       nixpkgs,
+      nixpkgs-mesa-compat,
       flake-utils,
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -22,6 +28,7 @@
             android_sdk.accept_license = true;
           };
         };
+        mesaCompat = (import nixpkgs-mesa-compat { inherit system; }).mesa;
 
         # Android SDKの構成
         buildToolsVersion = "34.0.0";
@@ -89,11 +96,19 @@
               export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
               # Android emulator GPU acceleration on NixOS.
-              # - libglvnd provides libGL.so.1 (dispatcher); /run/opengl-driver/lib has the mesa driver impl.
-              # - vulkan-loader provides libvulkan.so.1; XDG_DATA_DIRS lets it discover the mesa Vulkan ICDs.
-              # Without these the emulator falls back to swiftshader software rendering (~10 fps).
-              export LD_LIBRARY_PATH="${libglvnd}/lib:${vulkan-loader}/lib:/run/opengl-driver/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-              export XDG_DATA_DIRS="/run/opengl-driver/share''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+              # - libglvnd provides libGL.so.1 (dispatcher); mesa-compat has the vendor impls.
+              # - vulkan-loader provides libvulkan.so.1.
+              # - mesa-compat is pinned to nixos-25.11's mesa (25.2.6, glibc 2.40) so the
+              #   Vulkan/GL drivers load in the androidenv emulator process, which is itself
+              #   linked against glibc 2.40. System /run/opengl-driver ships a newer mesa
+              #   that requires GLIBC_ABI_GNU2_TLS from glibc >= 2.41 → emulator sees only
+              #   llvmpipe (software Vulkan) and GL init fails ("Failed to find exactly 1
+              #   GLES 2.x config"). Explicitly pointing VK_ICD / EGL vendor lookup at
+              #   mesa-compat sidesteps that.
+              export LD_LIBRARY_PATH="${mesaCompat}/lib:${libglvnd}/lib:${vulkan-loader}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export VK_ICD_FILENAMES="${mesaCompat}/share/vulkan/icd.d/radeon_icd.x86_64.json"
+              export __EGL_VENDOR_LIBRARY_FILENAMES="${mesaCompat}/share/glvnd/egl_vendor.d/50_mesa.json"
+              export XDG_DATA_DIRS="${mesaCompat}/share''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 
               flutter config --android-sdk $ANDROID_SDK_ROOT
 
