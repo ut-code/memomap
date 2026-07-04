@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:memomap/config/backend_config.dart';
@@ -25,10 +25,18 @@ class AuthRepository {
   String get _authBaseUrl => '${BackendConfig.url}/api/auth';
 
   Future<SessionResponse?> getSession() async {
+    await _logCookiesForDiagnosis('getSession');
     try {
       final response = await _dio.get('$_authBaseUrl/get-session');
 
       await _extractSessionInfo(response);
+
+      if (kDebugMode) {
+        debugPrint(
+            '[AuthRepository.getSession] status=${response.statusCode} '
+            'body_type=${response.data?.runtimeType} '
+            'body=${response.data}');
+      }
 
       if (response.data == null) return null;
 
@@ -36,9 +44,35 @@ class AuthRepository {
       if (data['session'] == null || data['user'] == null) return null;
 
       return SessionResponse.fromJson(data);
-    } on DioException {
-      await TokenStorage.deleteToken();
+    } on DioException catch (e) {
+      // Log verbose diagnostics — a silent null return here presents as
+      // "signed out permanently" to the user, so we want the actual
+      // status code and body visible in logs.
+      if (kDebugMode) {
+        debugPrint(
+            '[AuthRepository.getSession] DioException type=${e.type} '
+            'status=${e.response?.statusCode} '
+            'body=${e.response?.data} '
+            'message=${e.message}');
+      }
+      // Do NOT delete TokenStorage here. Auth is via cookies, not that
+      // sessionId. Deleting it accomplishes nothing except making the
+      // token look absent on subsequent runs — misleading during
+      // debugging of persistence issues.
       return null;
+    }
+  }
+
+  Future<void> _logCookiesForDiagnosis(String label) async {
+    if (!kDebugMode || kIsWeb) return;
+    try {
+      final jar = await BackendConfig.getCookieJar();
+      final cookies = await jar.loadForRequest(Uri.parse(_authBaseUrl));
+      debugPrint(
+          '[AuthRepository.$label] cookies for $_authBaseUrl: '
+          '${cookies.map((c) => '${c.name}=<${c.value.length} chars>').toList()}');
+    } catch (e) {
+      debugPrint('[AuthRepository.$label] cookie jar read failed: $e');
     }
   }
 

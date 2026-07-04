@@ -100,6 +100,17 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final newPinIds = pins.map((p) => p.id).toSet();
     final oldPinIds = _pinToAnnotation.keys.toSet();
 
+    // TODO(perf): rekey optimistic→real transitions instead of delete+create.
+    // addPin sets an optimistic PinData with a local UUID, then replaces it
+    // with a server PinData carrying a different UUID at the same position.
+    // The current ID-only diff treats this as toRemove + toAdd and pays two
+    // Mapbox round-trips for what is visually a no-op. Detecting a removed
+    // and an added pin that share position and rekeying the annotation
+    // (`_pinToAnnotation[newId] = oldAnn; _annotationToPin[oldAnn.id] =
+    // newPin;`) would skip both the delete and the create. This does NOT
+    // change when the optimistic pin first appears (that's bounded by the
+    // initial `create` latency, not the transition), so it's a churn-
+    // reduction, not a UX fix.
     final toRemove = oldPinIds.difference(newPinIds);
     for (final pinId in toRemove) {
       final annotation = _pinToAnnotation.remove(pinId);
