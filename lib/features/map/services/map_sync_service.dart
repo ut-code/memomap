@@ -145,16 +145,60 @@ class MapSyncService {
     var idMapping = <String, String>{};
 
     if (localMaps.isNotEmpty) {
-      idMapping = await repository.uploadLocalMaps(localMaps);
-      if (idMapping.isNotEmpty) {
-        await storage.setLocalMaps([]);
+      // Best-effort: fetch existing names so we can rename on conflict.
+      // If the GET fails, upload anyway with original names — the server
+      // allows duplicate names (no unique constraint).
+      Set<String> existingNames;
+      try {
+        existingNames = (await repository.getMaps()).map((m) => m.name).toSet();
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('Failed to fetch existing maps for rename: $e');
+        }
+        existingNames = <String>{};
+      }
+      final renamed = _renameToAvoidConflicts(localMaps, existingNames);
+      idMapping = await repository.uploadLocalMaps(renamed);
+      final remaining =
+          localMaps.where((m) => !idMapping.containsKey(m.id)).toList();
+      if (remaining.length != localMaps.length) {
+        await storage.setLocalMaps(remaining);
       }
     }
 
-    final serverMaps = await repository.getMaps();
-    await storage.setCachedMaps(serverMaps);
+    try {
+      final serverMaps = await repository.getMaps();
+      await storage.setCachedMaps(serverMaps);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Failed to refresh maps cache: $e');
+      }
+    }
 
     return idMapping;
+  }
+
+  /// Returns local maps with names suffixed by " (1)", " (2)", ... when they
+  /// would collide with an existing server map name.
+  static List<MapData> _renameToAvoidConflicts(
+    List<MapData> locals,
+    Set<String> existingNames,
+  ) {
+    final taken = Set<String>.from(existingNames);
+    return locals.map((local) {
+      if (!taken.contains(local.name)) {
+        taken.add(local.name);
+        return local;
+      }
+      var i = 1;
+      String candidate;
+      do {
+        candidate = '${local.name} ($i)';
+        i++;
+      } while (taken.contains(candidate));
+      taken.add(candidate);
+      return local.copyWith(name: candidate);
+    }).toList();
   }
 
   Future<void> _processPendingDeletions() async {
@@ -177,18 +221,18 @@ class MapSyncService {
     await storage.setPendingDeletions(failedDeletions);
   }
 
-  Future<String?> getCurrentMapId() async {
-    final mapId = await storage.getCurrentMapId();
+  Future<String?> getCurrentMapId(String? userId) async {
+    final mapId = await storage.getCurrentMapId(userId);
     if (kDebugMode) {
-      debugPrint('[MapSync] getCurrentMapId: $mapId');
+      debugPrint('[MapSync] getCurrentMapId(user=$userId): $mapId');
     }
     return mapId;
   }
 
-  Future<void> setCurrentMapId(String? mapId) async {
+  Future<void> setCurrentMapId(String? userId, String? mapId) async {
     if (kDebugMode) {
-      debugPrint('[MapSync] setCurrentMapId: $mapId');
+      debugPrint('[MapSync] setCurrentMapId(user=$userId): $mapId');
     }
-    await storage.setCurrentMapId(mapId);
+    await storage.setCurrentMapId(userId, mapId);
   }
 }

@@ -324,6 +324,79 @@ void main() {
         verify(() => mockStorage.setPendingDeletions(['del-1'])).called(1);
       });
 
+      test('renames local map when name conflicts with server map', () async {
+        final localMap = MapData(
+          id: 'local-uuid',
+          userId: null,
+          name: 'Default Map',
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: true,
+        );
+        final existingServerMap = MapData(
+          id: 'server-original',
+          userId: 'user-1',
+          name: 'Default Map',
+          createdAt: DateTime.utc(2024, 1, 14),
+        );
+
+        when(() => mockNetworkChecker.isOnline)
+            .thenAnswer((_) async => true);
+        when(() => mockStorage.getPendingDeletions())
+            .thenAnswer((_) async => []);
+        when(() => mockStorage.getLocalMaps())
+            .thenAnswer((_) async => [localMap]);
+        when(() => mockStorage.setLocalMaps(any()))
+            .thenAnswer((_) async {});
+        when(() => mockRepository.getMaps())
+            .thenAnswer((_) async => [existingServerMap]);
+        when(() => mockRepository.uploadLocalMaps(any()))
+            .thenAnswer((_) async => {'local-uuid': 'server-renamed'});
+        when(() => mockStorage.setCachedMaps(any()))
+            .thenAnswer((_) async {});
+
+        await syncService.syncWithServer();
+
+        final captured =
+            verify(() => mockRepository.uploadLocalMaps(captureAny())).captured;
+        final uploaded = captured.single as List<MapData>;
+        expect(uploaded.single.name, 'Default Map (1)');
+      });
+
+      test('uploads with original names when getMaps fails (rename skipped)',
+          () async {
+        final localMap = MapData(
+          id: 'local-uuid',
+          userId: null,
+          name: 'Default Map',
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: true,
+        );
+
+        when(() => mockNetworkChecker.isOnline)
+            .thenAnswer((_) async => true);
+        when(() => mockStorage.getPendingDeletions())
+            .thenAnswer((_) async => []);
+        when(() => mockStorage.getLocalMaps())
+            .thenAnswer((_) async => [localMap]);
+        when(() => mockStorage.setLocalMaps(any()))
+            .thenAnswer((_) async {});
+        when(() => mockRepository.getMaps())
+            .thenThrow(Exception('network down'));
+        when(() => mockRepository.uploadLocalMaps(any()))
+            .thenAnswer((_) async => {'local-uuid': 'server-up'});
+        when(() => mockStorage.setCachedMaps(any()))
+            .thenAnswer((_) async {});
+
+        final mapping = await syncService.syncWithServer();
+
+        expect(mapping, {'local-uuid': 'server-up'});
+        final captured =
+            verify(() => mockRepository.uploadLocalMaps(captureAny())).captured;
+        final uploaded = captured.single as List<MapData>;
+        // No rename — server allows duplicates.
+        expect(uploaded.single.name, 'Default Map');
+      });
+
       test('should not duplicate maps after sync (local map uploaded)', () async {
         final localMap = MapData(
           id: 'local-uuid',

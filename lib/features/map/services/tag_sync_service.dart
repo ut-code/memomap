@@ -146,8 +146,10 @@ class TagSyncService {
     var idMapping = <String, String>{};
     if (localTags.isNotEmpty) {
       idMapping = await repository.uploadLocalTags(localTags);
-      if (idMapping.isNotEmpty) {
-        await storage.setLocalTags([]);
+      final remaining =
+          localTags.where((t) => !idMapping.containsKey(t.id)).toList();
+      if (remaining.length != localTags.length) {
+        await storage.setLocalTags(remaining);
       }
     }
 

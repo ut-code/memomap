@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:memomap/api/api_client.dart';
 import 'package:memomap/api/models/api_maps_id_request_body.dart';
 import 'package:memomap/api/models/api_maps_request_body.dart';
@@ -201,12 +202,18 @@ class MapRepository implements MapRepositoryBase {
 
     final idMapping = <String, String>{};
     for (final map in localMaps) {
-      final created = await createMap(
-        name: map.name,
-        description: map.description,
-      );
-      if (created != null) {
-        idMapping[map.id] = created.id;
+      try {
+        final created = await createMap(
+          name: map.name,
+          description: map.description,
+        );
+        if (created != null) {
+          idMapping[map.id] = created.id;
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('Failed to upload map ${map.name}: $e');
+        }
       }
     }
     return idMapping;

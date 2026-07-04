@@ -218,13 +218,44 @@ class TagRepository implements TagRepositoryBase {
   Future<Map<String, String>> uploadLocalTags(List<TagData> localTags) async {
     if (!await _isAuthenticated() || localTags.isEmpty) return {};
 
+    // Best-effort: fetch existing names so we can rename on conflict.
+    // If the GET fails (transient network/auth issue), upload anyway with
+    // original names — the server allows duplicate names since the unique
+    // index was dropped.
+    Set<String> taken;
+    try {
+      taken = (await getTags()).map((t) => t.name).toSet();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Failed to fetch existing tags for rename: $e');
+      }
+      taken = <String>{};
+    }
+
     final idMapping = <String, String>{};
     for (final tag in localTags) {
-      final created = await createTag(name: tag.name, color: tag.color);
-      if (created != null) {
-        idMapping[tag.id] = created.id;
+      final name = _uniqueName(tag.name, taken);
+      taken.add(name);
+      try {
+        final created = await createTag(name: name, color: tag.color);
+        if (created != null) {
+          idMapping[tag.id] = created.id;
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('Failed to upload tag ${tag.name}: $e');
+        }
       }
     }
     return idMapping;
+  }
+
+  static String _uniqueName(String base, Set<String> taken) {
+    if (!taken.contains(base)) return base;
+    var i = 1;
+    while (taken.contains('$base ($i)')) {
+      i++;
+    }
+    return '$base ($i)';
   }
 }

@@ -166,6 +166,7 @@ void main() {
         final local1 = TagData.local(name: 'A', color: 0xFFFF0000);
         final local2 = TagData.local(name: 'B', color: 0xFF00FF00);
 
+        when(() => mockTagsClient.getApiTags()).thenAnswer((_) async => const []);
         when(() => mockTagsClient.postApiTags(body: any(named: 'body')))
             .thenAnswer((invocation) async {
           final body =
@@ -185,6 +186,100 @@ void main() {
         expect(mapping[local2.id], 'srv-B');
         verify(() => mockTagsClient.postApiTags(body: any(named: 'body')))
             .called(2);
+      });
+
+      test('renames tag when name conflicts with existing server tag', () async {
+        final local = TagData.local(name: 'Work', color: 0xFFFF0000);
+
+        when(() => mockTagsClient.getApiTags()).thenAnswer(
+          (_) async => const [
+            GetApiTagsResponse(
+              id: 'srv-existing',
+              userId: 'u1',
+              name: 'Work',
+              color: '#FF0000',
+              createdAt: '2024-01-15T10:30:00.000Z',
+            ),
+          ],
+        );
+        when(() => mockTagsClient.postApiTags(body: any(named: 'body')))
+            .thenAnswer((invocation) async {
+          final body =
+              invocation.namedArguments[const Symbol('body')] as ApiTagsRequestBody;
+          return PostApiTagsResponse(
+            id: 'srv-renamed',
+            userId: 'u1',
+            name: body.name,
+            color: body.color,
+            createdAt: '2024-01-15T10:30:00.000Z',
+          );
+        });
+
+        final mapping = await repository.uploadLocalTags([local]);
+
+        expect(mapping[local.id], 'srv-renamed');
+        final captured = verify(
+          () => mockTagsClient.postApiTags(body: captureAny(named: 'body')),
+        ).captured;
+        final body = captured.single as ApiTagsRequestBody;
+        expect(body.name, 'Work (1)');
+      });
+
+      test('uploads with original names when getTags fails (rename skipped)',
+          () async {
+        final local = TagData.local(name: 'Work', color: 0xFFFF0000);
+
+        when(() => mockTagsClient.getApiTags())
+            .thenThrow(Exception('network down'));
+        when(() => mockTagsClient.postApiTags(body: any(named: 'body')))
+            .thenAnswer((invocation) async {
+          final body =
+              invocation.namedArguments[const Symbol('body')] as ApiTagsRequestBody;
+          return PostApiTagsResponse(
+            id: 'srv-up',
+            userId: 'u1',
+            name: body.name,
+            color: body.color,
+            createdAt: '2024-01-15T10:30:00.000Z',
+          );
+        });
+
+        final mapping = await repository.uploadLocalTags([local]);
+
+        expect(mapping[local.id], 'srv-up');
+        final captured = verify(
+          () => mockTagsClient.postApiTags(body: captureAny(named: 'body')),
+        ).captured;
+        final body = captured.single as ApiTagsRequestBody;
+        // No rename applied — server allows duplicates so original name is used.
+        expect(body.name, 'Work');
+      });
+
+      test('continues remaining tags when one upload fails', () async {
+        final local1 = TagData.local(name: 'A', color: 0xFFFF0000);
+        final local2 = TagData.local(name: 'B', color: 0xFF00FF00);
+
+        when(() => mockTagsClient.getApiTags()).thenAnswer((_) async => const []);
+        when(() => mockTagsClient.postApiTags(body: any(named: 'body')))
+            .thenAnswer((invocation) async {
+          final body =
+              invocation.namedArguments[const Symbol('body')] as ApiTagsRequestBody;
+          if (body.name == 'A') {
+            throw Exception('boom');
+          }
+          return PostApiTagsResponse(
+            id: 'srv-${body.name}',
+            userId: 'u1',
+            name: body.name,
+            color: body.color,
+            createdAt: '2024-01-15T10:30:00.000Z',
+          );
+        });
+
+        final mapping = await repository.uploadLocalTags([local1, local2]);
+
+        expect(mapping.containsKey(local1.id), false);
+        expect(mapping[local2.id], 'srv-B');
       });
 
       test('returns empty mapping when list is empty', () async {
