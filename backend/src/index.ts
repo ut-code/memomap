@@ -1,6 +1,8 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { PgDatabase } from "drizzle-orm/pg-core";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
 import {
@@ -45,10 +47,17 @@ type Bindings = AuthEnv & {
 	ALLOWED_ORIGINS?: string;
 };
 
+// biome-ignore lint/suspicious/noExplicitAny: drizzle drivers expose different HKTs; we accept any PG-compatible driver
+type AnyPgDb = PgDatabase<any, any, any>;
+
 type Variables = {
 	userId: string;
 	userEmail: string;
+	// Optional pre-injected db (used by tests to bypass real postgres connection)
+	db?: AnyPgDb;
 };
+
+type AppContext = Context<{ Bindings: Bindings; Variables: Variables }>;
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -118,6 +127,13 @@ const authMiddleware = createMiddleware<{
 	Bindings: Bindings;
 	Variables: Variables;
 }>(async (c, next) => {
+	// Test bypass: if userId is already injected by a parent middleware,
+	// skip Better Auth. Production never sets userId before this point.
+	if (c.get("userId")) {
+		await next();
+		return;
+	}
+
 	try {
 		const auth = createAuth(c.env);
 		const session = await auth.api.getSession({ headers: c.req.raw.headers });
@@ -136,10 +152,22 @@ const authMiddleware = createMiddleware<{
 });
 
 async function withDb<T>(
-	connectionString: string,
-	fn: (db: PostgresJsDatabase) => Promise<T>,
+	c: AppContext,
+	fn: (db: AnyPgDb) => Promise<T>,
 ): Promise<T> {
-	const client = postgres(connectionString, { max: 1 });
+	const injected = c.get("db");
+	if (injected) return await fn(injected);
+
+	// Per-request client. `fetch_types: false` skips the initial type-fetch
+	// SELECT that would otherwise pollute the unnamed prepared statement
+	// slot. Default `prepare: true` is used because postgres-js then assigns
+	// each distinct query string a unique statement name (s0, s1, ...) —
+	// names don't collide across requests the way the empty/unnamed slot
+	// does when CF reuses the underlying TCP connection.
+	const client = postgres(c.env.DATABASE_URL, {
+		max: 1,
+		fetch_types: false,
+	});
 	try {
 		const db = drizzle(client);
 		return await fn(db);
@@ -149,12 +177,12 @@ async function withDb<T>(
 }
 
 async function validateMapOwnership(
-	connectionString: string,
+	c: AppContext,
 	mapId: string | null | undefined,
 	userId: string,
 ): Promise<boolean> {
 	if (!mapId) return true;
-	const result = await withDb(connectionString, (db) =>
+	const result = await withDb(c, (db) =>
 		db
 			.select({ id: maps.id })
 			.from(maps)
@@ -217,7 +245,7 @@ app.get(
 		const userId = c.get("userId");
 
 		try {
-			const data = await withDb(c.env.DATABASE_URL, async (db) => {
+			const data = await withDb(c,async (db) => {
 				const pinRows = await db
 					.select()
 					.from(pins)
@@ -289,12 +317,12 @@ app.post(
 		const userId = c.get("userId");
 		const body = c.req.valid("json");
 
-		if (!(await validateMapOwnership(c.env.DATABASE_URL, body.mapId, userId))) {
+		if (!(await validateMapOwnership(c,body.mapId, userId))) {
 			return c.json({ error: "Map not found" }, 404);
 		}
 
 		try {
-			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+			const [data] = await withDb(c,(db) =>
 				db
 					.insert(pins)
 					.values({
@@ -347,7 +375,7 @@ app.delete(
 		}
 
 		try {
-			await withDb(c.env.DATABASE_URL, (db) =>
+			await withDb(c,(db) =>
 				db.delete(pins).where(and(eq(pins.id, pinId), eq(pins.userId, userId))),
 			);
 
@@ -391,7 +419,7 @@ app.post(
 
 		const mapIds = [...new Set(body.pins.map((p) => p.mapId).filter(Boolean))];
 		for (const mapId of mapIds) {
-			if (!(await validateMapOwnership(c.env.DATABASE_URL, mapId, userId))) {
+			if (!(await validateMapOwnership(c,mapId, userId))) {
 				return c.json({ error: "Map not found" }, 404);
 			}
 		}
@@ -404,7 +432,7 @@ app.post(
 		}));
 
 		try {
-			const data = await withDb(c.env.DATABASE_URL, (db) =>
+			const data = await withDb(c,(db) =>
 				db.insert(pins).values(pinsToInsert).returning(),
 			);
 
@@ -459,47 +487,49 @@ app.patch(
 		}
 
 		try {
-			const result = await withDb(c.env.DATABASE_URL, async (db) => {
-				const [owned] = await db
-					.select({ id: pins.id })
-					.from(pins)
-					.where(and(eq(pins.id, pinId), eq(pins.userId, userId)))
-					.limit(1);
-				if (!owned) return null;
+			const result = await withDb(c,(db) =>
+				db.transaction(async (tx) => {
+					const [owned] = await tx
+						.select({ id: pins.id })
+						.from(pins)
+						.where(and(eq(pins.id, pinId), eq(pins.userId, userId)))
+						.limit(1);
+					if (!owned) return null;
 
-				if (body.tagIds !== undefined) {
-					if (body.tagIds.length > 0) {
-						const valid = await db
-							.select({ id: tags.id })
-							.from(tags)
-							.where(
-								and(eq(tags.userId, userId), inArray(tags.id, body.tagIds)),
+					if (body.tagIds !== undefined) {
+						if (body.tagIds.length > 0) {
+							const valid = await tx
+								.select({ id: tags.id })
+								.from(tags)
+								.where(
+									and(eq(tags.userId, userId), inArray(tags.id, body.tagIds)),
+								);
+							if (valid.length !== new Set(body.tagIds).size) {
+								return "invalid_tag" as const;
+							}
+						}
+						await tx.delete(pinTags).where(eq(pinTags.pinId, pinId));
+						if (body.tagIds.length > 0) {
+							await tx.insert(pinTags).values(
+								body.tagIds.map((tagId) => ({
+									pinId,
+									tagId,
+								})),
 							);
-						if (valid.length !== new Set(body.tagIds).size) {
-							return "invalid_tag" as const;
 						}
 					}
-					await db.delete(pinTags).where(eq(pinTags.pinId, pinId));
-					if (body.tagIds.length > 0) {
-						await db.insert(pinTags).values(
-							body.tagIds.map((tagId) => ({
-								pinId,
-								tagId,
-							})),
-						);
-					}
-				}
 
-				const [updated] = await db
-					.select()
-					.from(pins)
-					.where(eq(pins.id, pinId));
-				const links = await db
-					.select()
-					.from(pinTags)
-					.where(eq(pinTags.pinId, pinId));
-				return { ...updated, tagIds: links.map((l) => l.tagId) };
-			});
+					const [updated] = await tx
+						.select()
+						.from(pins)
+						.where(eq(pins.id, pinId));
+					const links = await tx
+						.select()
+						.from(pinTags)
+						.where(eq(pinTags.pinId, pinId));
+					return { ...updated, tagIds: links.map((l) => l.tagId) };
+				}),
+			);
 
 			if (result === null) return c.json({ error: "Pin not found" }, 404);
 			if (result === "invalid_tag")
@@ -539,7 +569,7 @@ app.get(
 		const userId = c.get("userId");
 
 		try {
-			const data = await withDb(c.env.DATABASE_URL, (db) =>
+			const data = await withDb(c,(db) =>
 				db
 					.select()
 					.from(tags)
@@ -572,10 +602,6 @@ app.post(
 				description: "Unauthorized",
 				content: { "application/json": { schema: resolver(ErrorSchema) } },
 			},
-			409: {
-				description: "Tag name already exists",
-				content: { "application/json": { schema: resolver(ErrorSchema) } },
-			},
 			500: {
 				description: "Internal server error",
 				content: { "application/json": { schema: resolver(ErrorSchema) } },
@@ -589,7 +615,7 @@ app.post(
 		const body = c.req.valid("json");
 
 		try {
-			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+			const [data] = await withDb(c,(db) =>
 				db
 					.insert(tags)
 					.values({
@@ -601,11 +627,6 @@ app.post(
 			);
 			return c.json(data, 201);
 		} catch (error) {
-			// Postgres unique violation
-			const code = (error as { code?: string })?.code;
-			if (code === "23505") {
-				return c.json({ error: "Tag name already exists" }, 409);
-			}
 			console.error("Failed to create tag:", error);
 			return c.json({ error: "Failed to create tag" }, 500);
 		}
@@ -634,10 +655,6 @@ app.put(
 				description: "Tag not found",
 				content: { "application/json": { schema: resolver(ErrorSchema) } },
 			},
-			409: {
-				description: "Tag name already exists",
-				content: { "application/json": { schema: resolver(ErrorSchema) } },
-			},
 			500: {
 				description: "Internal server error",
 				content: { "application/json": { schema: resolver(ErrorSchema) } },
@@ -664,7 +681,7 @@ app.put(
 				return c.json({ error: "No fields to update" }, 400);
 			}
 
-			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+			const [data] = await withDb(c,(db) =>
 				db
 					.update(tags)
 					.set(updateData)
@@ -677,10 +694,6 @@ app.put(
 			}
 			return c.json(data);
 		} catch (error) {
-			const code = (error as { code?: string })?.code;
-			if (code === "23505") {
-				return c.json({ error: "Tag name already exists" }, 409);
-			}
 			console.error("Failed to update tag:", error);
 			return c.json({ error: "Failed to update tag" }, 500);
 		}
@@ -720,7 +733,7 @@ app.delete(
 		}
 
 		try {
-			await withDb(c.env.DATABASE_URL, (db) =>
+			await withDb(c,(db) =>
 				db.delete(tags).where(and(eq(tags.id, tagId), eq(tags.userId, userId))),
 			);
 			return c.body(null, 204);
@@ -760,7 +773,7 @@ app.get(
 		const userId = c.get("userId");
 
 		try {
-			const data = await withDb(c.env.DATABASE_URL, (db) =>
+			const data = await withDb(c,(db) =>
 				db
 					.select()
 					.from(drawings)
@@ -806,12 +819,12 @@ app.post(
 		const userId = c.get("userId");
 		const body = c.req.valid("json");
 
-		if (!(await validateMapOwnership(c.env.DATABASE_URL, body.mapId, userId))) {
+		if (!(await validateMapOwnership(c,body.mapId, userId))) {
 			return c.json({ error: "Map not found" }, 404);
 		}
 
 		try {
-			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+			const [data] = await withDb(c,(db) =>
 				db
 					.insert(drawings)
 					.values({
@@ -865,7 +878,7 @@ app.delete(
 		}
 
 		try {
-			await withDb(c.env.DATABASE_URL, (db) =>
+			await withDb(c,(db) =>
 				db
 					.delete(drawings)
 					.where(and(eq(drawings.id, drawingId), eq(drawings.userId, userId))),
@@ -915,7 +928,7 @@ app.post(
 			...new Set(body.drawings.map((d) => d.mapId).filter(Boolean)),
 		];
 		for (const mapId of mapIds) {
-			if (!(await validateMapOwnership(c.env.DATABASE_URL, mapId, userId))) {
+			if (!(await validateMapOwnership(c,mapId, userId))) {
 				return c.json({ error: "Map not found" }, 404);
 			}
 		}
@@ -929,7 +942,7 @@ app.post(
 		}));
 
 		try {
-			const data = await withDb(c.env.DATABASE_URL, (db) =>
+			const data = await withDb(c,(db) =>
 				db.insert(drawings).values(drawingsToInsert).returning(),
 			);
 
@@ -968,7 +981,7 @@ app.get(
 		const userId = c.get("userId");
 
 		try {
-			const data = await withDb(c.env.DATABASE_URL, (db) =>
+			const data = await withDb(c,(db) =>
 				db
 					.select()
 					.from(maps)
@@ -1015,7 +1028,7 @@ app.post(
 		const body = c.req.valid("json");
 
 		try {
-			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+			const [data] = await withDb(c,(db) =>
 				db
 					.insert(maps)
 					.values({
@@ -1083,7 +1096,7 @@ app.put(
 				return c.json({ error: "No fields to update" }, 400);
 			}
 
-			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+			const [data] = await withDb(c,(db) =>
 				db
 					.update(maps)
 					.set(updateData)
@@ -1136,7 +1149,7 @@ app.delete(
 		}
 
 		try {
-			await withDb(c.env.DATABASE_URL, (db) =>
+			await withDb(c,(db) =>
 				db.delete(maps).where(and(eq(maps.id, mapId), eq(maps.userId, userId))),
 			);
 

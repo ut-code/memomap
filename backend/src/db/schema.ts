@@ -7,7 +7,6 @@ import {
 	primaryKey,
 	text,
 	timestamp,
-	uniqueIndex,
 	uuid,
 } from "drizzle-orm/pg-core";
 
@@ -113,21 +112,15 @@ export const pinsRelations = relations(pins, ({ one, many }) => ({
 export type Pin = typeof pins.$inferSelect;
 export type NewPin = typeof pins.$inferInsert;
 
-export const tags = pgTable(
-	"tags",
-	{
-		id: uuid("id").primaryKey().defaultRandom(),
-		userId: text("user_id")
-			.notNull()
-			.references(() => user.id, { onDelete: "cascade" }),
-		name: text("name").notNull(),
-		color: text("color").notNull(),
-		createdAt: timestamp("created_at").defaultNow().notNull(),
-	},
-	(t) => ({
-		userNameUnique: uniqueIndex("tags_user_name_unique").on(t.userId, t.name),
-	}),
-);
+export const tags = pgTable("tags", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	name: text("name").notNull(),
+	color: text("color").notNull(),
+	createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;

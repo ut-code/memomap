@@ -13,7 +13,13 @@ export type AuthEnv = {
 };
 
 export function createAuth(env: AuthEnv) {
-	const client = postgres(env.DATABASE_URL);
+	// Per-request client. `fetch_types: false` to skip the type-fetch
+	// SELECT that pollutes the unnamed prepared statement slot. Default
+	// `prepare: true` keeps queries on named statements, which are less
+	// prone to CF connection-reuse corruption than the unnamed slot.
+	const client = postgres(env.DATABASE_URL, {
+		fetch_types: false,
+	});
 	const db = drizzle(client, { schema });
 
 	const isDev = env.BETTER_AUTH_URL.includes("localhost");
