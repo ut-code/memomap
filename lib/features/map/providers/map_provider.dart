@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
@@ -40,36 +42,59 @@ final mapsProvider = AsyncNotifierProvider<MapsNotifier, List<MapData>>(() {
 });
 
 class MapsNotifier extends AsyncNotifier<List<MapData>> {
+  Completer<void> _syncCompleter = Completer<void>();
+
+  /// Resolves when this build's sync (upload + `mapIdMappingProvider`
+  /// publish) has finished. Distinct from `mapsProvider.future`, which
+  /// resolves at the mid-build `state = AsyncData(cached)` publish and is
+  /// therefore too early for dependents that need the mapping to be ready.
+  Future<void> get syncDone => _syncCompleter.future;
+
   @override
   Future<List<MapData>> build() async {
-    final syncService = await ref.watch(mapSyncServiceProvider.future);
-
-    // ref.watch triggers rebuild when session changes.
-    // Do NOT use ref.listen + invalidateSelf together with ref.watch
-    // on the same provider — it causes concurrent builds and double uploads.
-    final session = await ref.watch(sessionProvider.future);
-    final currentUserId = session?.user.id;
-    final isAuthenticated = ref.read(isAuthenticatedProvider);
-
-    // Clear before reading to avoid briefly showing previous user's data
-    await syncService.clearIfUserChanged(currentUserId);
-
-    final cachedMaps = await syncService.getAllMaps();
-    state = AsyncValue.data(cachedMaps);
-
-    if (isAuthenticated) {
-      final idMapping = await syncService.syncWithServer();
-
-      // Always publish the latest result (including {}) so downstream
-      // providers see fresh state rather than a stale prior-session mapping.
-      ref.read(mapIdMappingProvider.notifier).state = idMapping;
-
-      final freshMaps = await syncService.getAllMaps();
-      state = AsyncValue.data(freshMaps);
-      return freshMaps;
+    // Reset synchronously at the top of every build so consumers that read
+    // `syncDone` right after triggering our build (e.g. `ref.read(mapsProvider
+    // .notifier).syncDone` in pinsProvider) receive this build's completer
+    // rather than a completed one left over from a prior session.
+    if (_syncCompleter.isCompleted) {
+      _syncCompleter = Completer<void>();
     }
 
-    return cachedMaps;
+    try {
+      final syncService = await ref.watch(mapSyncServiceProvider.future);
+
+      // ref.watch triggers rebuild when session changes.
+      // Do NOT use ref.listen + invalidateSelf together with ref.watch
+      // on the same provider — it causes concurrent builds and double uploads.
+      final session = await ref.watch(sessionProvider.future);
+      final currentUserId = session?.user.id;
+      final isAuthenticated = ref.read(isAuthenticatedProvider);
+
+      // Clear before reading to avoid briefly showing previous user's data
+      await syncService.clearIfUserChanged(currentUserId);
+
+      final cachedMaps = await syncService.getAllMaps();
+      state = AsyncValue.data(cachedMaps);
+
+      if (isAuthenticated) {
+        final idMapping = await syncService.syncWithServer();
+
+        // Always publish the latest result (including {}) so downstream
+        // providers see fresh state rather than a stale prior-session mapping.
+        ref.read(mapIdMappingProvider.notifier).state = idMapping;
+
+        final freshMaps = await syncService.getAllMaps();
+        state = AsyncValue.data(freshMaps);
+        return freshMaps;
+      }
+
+      return cachedMaps;
+    } finally {
+      // Always signal completion — even on error — so awaiting dependents
+      // don't hang. They will observe the actual failure through their own
+      // provider state, not through this signal.
+      if (!_syncCompleter.isCompleted) _syncCompleter.complete();
+    }
   }
 
   Future<MapData?> createMap({required String name, String? description}) async {

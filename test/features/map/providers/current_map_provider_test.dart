@@ -25,6 +25,11 @@ class _StubPinsNotifier extends AsyncNotifier<List<PinData>>
   @override
   Future<List<PinData>> build() async => _initial;
 
+  // Real PinsNotifier exposes syncDone as a signal that its build's remap
+  // has settled. This stub has no sync to do, so resolve immediately.
+  @override
+  Future<void> get syncDone => Future.value();
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -42,6 +47,9 @@ class _StubDrawingNotifier extends AsyncNotifier<DrawingState>
         strokeWidth: 3,
         isDrawingMode: false,
       );
+
+  @override
+  Future<void> get syncDone => Future.value();
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

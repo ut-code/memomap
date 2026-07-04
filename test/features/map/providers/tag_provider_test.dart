@@ -17,6 +17,9 @@ class _FakePinsNotifier extends AsyncNotifier<List<PinData>>
   Future<List<PinData>> build() async => [];
 
   @override
+  Future<void> get syncDone => Future.value();
+
+  @override
   void removeTagFromAllPins(String tagId) {
     removedTagIds.add(tagId);
   }

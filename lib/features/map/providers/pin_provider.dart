@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
@@ -45,6 +47,14 @@ final pinsProvider = AsyncNotifierProvider<PinsNotifier, List<PinData>>(() {
 });
 
 class PinsNotifier extends AsyncNotifier<List<PinData>> {
+  Completer<void> _syncCompleter = Completer<void>();
+
+  /// Resolves when this build has finished remapping local IDs and
+  /// published its final state. Used by `currentMapProvider`'s
+  /// empty-default cleanup to read post-sync pin state instead of the
+  /// mid-build cached snapshot that `.future` would return.
+  Future<void> get syncDone => _syncCompleter.future;
+
   String? get _currentMapId => ref.read(currentMapIdProvider);
 
   List<PinData> _filterByCurrentMap(List<PinData> pins) {
@@ -57,82 +67,109 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
 
   @override
   Future<List<PinData>> build() async {
-    ref.listen(sessionProvider, (prev, next) {
-      final prevUserId = prev?.valueOrNull?.user.id;
-      final nextUserId = next.valueOrNull?.user.id;
-      if (prevUserId != nextUserId) {
-        ref.invalidateSelf();
-      }
-    });
-
-    ref.listen(currentMapIdProvider, (prev, next) {
-      if (prev != next) {
-        ref.invalidateSelf();
-      }
-    });
-
-    final syncService = await ref.watch(pinSyncServiceProvider.future);
-    final session = ref.read(sessionProvider).valueOrNull;
-    final currentUserId = session?.user.id;
-
-    // Clear before reading to avoid briefly showing previous user's data
-    await syncService.clearIfUserChanged(currentUserId);
-
-    // Optimistic display: show cached pins immediately while we wait for
-    // dependent providers (maps, tags) to settle.
-    final initialPins = await syncService.getAllPins();
-    state = AsyncValue.data(_filterByCurrentMap(initialPins));
-
-    if (currentUserId != null) {
-      // Wait for BOTH map and tag sync to settle. Their builds publish
-      // mapIdMappingProvider / tagIdMappingProvider during sync, and local
-      // pins reference local map/tag IDs that must be remapped before
-      // they upload — otherwise pendingTagUpdates carry local UUIDs and
-      // the subsequent PATCH /api/pins/:id returns 400.
-      await ref.watch(mapsProvider.future);
-      await ref.watch(tagsProvider.future);
-
-      final idMapping = ref.read(mapIdMappingProvider);
-      if (idMapping.isNotEmpty) {
-        await syncService.remapLocalMapIds(idMapping);
-      }
-      final tagMapping = ref.read(tagIdMappingProvider);
-      if (tagMapping.isNotEmpty) {
-        await syncService.remapLocalTagIds(tagMapping);
-      }
+    if (_syncCompleter.isCompleted) {
+      _syncCompleter = Completer<void>();
     }
 
-    final allPins = await syncService.getAllPins();
-    final filteredPins = _filterByCurrentMap(allPins);
-    state = AsyncValue.data(filteredPins);
+    try {
+      ref.listen(sessionProvider, (prev, next) {
+        final prevUserId = prev?.valueOrNull?.user.id;
+        final nextUserId = next.valueOrNull?.user.id;
+        if (prevUserId != nextUserId) {
+          ref.invalidateSelf();
+        }
+      });
 
-    if (currentUserId != null) {
-      _syncInBackground(syncService);
-    }
+      ref.listen(currentMapIdProvider, (prev, next) {
+        if (prev != next) {
+          ref.invalidateSelf();
+        }
+      });
 
-    // React to tag ID mapping updates (tags uploaded in background).
-    ref.listen(tagIdMappingProvider, (prev, next) async {
-      if (next.isNotEmpty && next != prev) {
-        final svc = await ref.read(pinSyncServiceProvider.future);
-        await svc.remapLocalTagIds(next);
-        final pins = await svc.getAllPins();
-        state = AsyncValue.data(_filterByCurrentMap(pins));
+      final syncService = await ref.watch(pinSyncServiceProvider.future);
+      final session = ref.read(sessionProvider).valueOrNull;
+      final currentUserId = session?.user.id;
+
+      // Clear before reading to avoid briefly showing previous user's data
+      await syncService.clearIfUserChanged(currentUserId);
+
+      // Optimistic display: show cached pins immediately while we wait for
+      // dependent providers (maps, tags) to settle.
+      final initialPins = await syncService.getAllPins();
+      state = AsyncValue.data(_filterByCurrentMap(initialPins));
+
+      if (currentUserId != null) {
+        // Wait for map and tag sync to publish their id mappings. We CANNOT
+        // use `ref.watch(mapsProvider.future)` — that resolves at the
+        // mid-build `state = AsyncData(cached)` publish, before mapping is
+        // set, and the subsequent remap runs against an empty map. Reading
+        // `.notifier` triggers each notifier's build (its synchronous
+        // prefix resets the completer), so `syncDone` returns this
+        // session's fresh Future.
+        final mapsNotifier = ref.read(mapsProvider.notifier);
+        final tagsNotifier = ref.read(tagsProvider.notifier);
+        await mapsNotifier.syncDone;
+        await tagsNotifier.syncDone;
+
+        final idMapping = ref.read(mapIdMappingProvider);
+        if (idMapping.isNotEmpty) {
+          await syncService.remapLocalMapIds(idMapping);
+        }
+        final tagMapping = ref.read(tagIdMappingProvider);
+        if (tagMapping.isNotEmpty) {
+          await syncService.remapLocalTagIds(tagMapping);
+        }
       }
-    });
 
-    return filteredPins;
+      final filteredPins = await _publishFilteredFromStorage(syncService);
+
+      if (currentUserId != null) {
+        _syncInBackground(syncService);
+      }
+
+      // React to tag ID mapping updates (tags uploaded in background).
+      ref.listen(tagIdMappingProvider, (prev, next) async {
+        if (next.isNotEmpty && next != prev) {
+          final svc = await ref.read(pinSyncServiceProvider.future);
+          await svc.remapLocalTagIds(next);
+          await _publishFilteredFromStorage(svc);
+        }
+      });
+
+      return filteredPins;
+    } finally {
+      if (!_syncCompleter.isCompleted) _syncCompleter.complete();
+    }
   }
 
   Future<void> _syncInBackground(PinSyncService syncService) async {
     try {
       await syncService.syncWithServer();
-      final allPins = await syncService.getAllPins();
-      state = AsyncValue.data(_filterByCurrentMap(allPins));
+      await _publishFilteredFromStorage(syncService);
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('Background sync failed: $e\n$st');
       }
     }
+  }
+
+  /// Reads pins from storage, filters by current map, and publishes to
+  /// state — preserving any pins the user added optimistically via
+  /// [addPin] / [updatePinTags] while this method was waiting. Storage
+  /// doesn't include them until their server round-trip persists them,
+  /// so a naive overwrite would flash the pin off the map until the next
+  /// refresh. Returns the published list for callers that need it.
+  Future<List<PinData>> _publishFilteredFromStorage(
+      PinSyncService syncService) async {
+    final allPins = await syncService.getAllPins();
+    final filteredPins = _filterByCurrentMap(allPins);
+    final currentPins = state.value ?? const <PinData>[];
+    final freshIds = filteredPins.map((p) => p.id).toSet();
+    final preserved =
+        currentPins.where((p) => !freshIds.contains(p.id)).toList();
+    final merged = [...preserved, ...filteredPins];
+    state = AsyncValue.data(merged);
+    return merged;
   }
 
   Future<void> addPin(LatLng position) async {

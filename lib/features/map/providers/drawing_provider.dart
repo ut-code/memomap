@@ -160,6 +160,13 @@ final drawingProvider =
 
 class DrawingNotifier extends AsyncNotifier<DrawingState> {
   final _lock = _AsyncLock();
+  Completer<void> _syncCompleter = Completer<void>();
+
+  /// Resolves when this build has finished remapping local IDs and
+  /// published its final state. Used by `currentMapProvider`'s
+  /// empty-default cleanup to read post-sync drawings instead of the
+  /// mid-build cached snapshot that `.future` would return.
+  Future<void> get syncDone => _syncCompleter.future;
 
   String? get _currentMapId => ref.read(currentMapIdProvider);
 
@@ -173,89 +180,113 @@ class DrawingNotifier extends AsyncNotifier<DrawingState> {
 
   @override
   Future<DrawingState> build() async {
-    ref.listen(sessionProvider, (prev, next) {
-      final prevUserId = prev?.valueOrNull?.user.id;
-      final nextUserId = next.valueOrNull?.user.id;
-      if (prevUserId != nextUserId) {
-        ref.invalidateSelf();
-      }
-    });
-
-    ref.listen(currentMapIdProvider, (prev, next) {
-      if (prev != next) {
-        ref.invalidateSelf();
-      }
-    });
-
-    final syncService = await ref.watch(drawingSyncServiceProvider.future);
-    final session = ref.read(sessionProvider).valueOrNull;
-    final currentUserId = session?.user.id;
-
-    await syncService.clearIfUserChanged(currentUserId);
-
-    // Optimistic display: show cached drawings immediately so the UI
-    // doesn't flash an empty canvas while we wait for maps to settle.
-    final cachedDrawings = await syncService.getAllDrawings();
-    final cachedState = DrawingState(
-      drawingDataList: _filterByCurrentMap(cachedDrawings),
-      selectedColor: Colors.red,
-      strokeWidth: 3,
-      isDrawingMode: false,
-    );
-    state = AsyncValue.data(cachedState);
-
-    if (currentUserId == null) {
-      // No remap path for guest — what we cached IS the final state.
-      // Skipping the redundant second fetch/state set is important: the
-      // race-condition tests await drawingProvider.future and immediately
-      // start calling addPath. Riverpod resolves .future on the first
-      // AsyncData state set (above), so any second state set inside build
-      // would race with — and clobber — addPath's optimistic updates.
-      return cachedState;
+    if (_syncCompleter.isCompleted) {
+      _syncCompleter = Completer<void>();
     }
 
-    // Wait for map sync to settle so local drawings can be remapped
-    // to server map IDs before they upload.
-    await ref.watch(mapsProvider.future);
+    try {
+      ref.listen(sessionProvider, (prev, next) {
+        final prevUserId = prev?.valueOrNull?.user.id;
+        final nextUserId = next.valueOrNull?.user.id;
+        if (prevUserId != nextUserId) {
+          ref.invalidateSelf();
+        }
+      });
 
-    final idMapping = ref.read(mapIdMappingProvider);
-    if (idMapping.isNotEmpty) {
-      await syncService.remapLocalMapIds(idMapping);
+      ref.listen(currentMapIdProvider, (prev, next) {
+        if (prev != next) {
+          ref.invalidateSelf();
+        }
+      });
+
+      final syncService = await ref.watch(drawingSyncServiceProvider.future);
+      final session = ref.read(sessionProvider).valueOrNull;
+      final currentUserId = session?.user.id;
+
+      await syncService.clearIfUserChanged(currentUserId);
+
+      // Optimistic display: show cached drawings immediately so the UI
+      // doesn't flash an empty canvas while we wait for maps to settle.
+      final cachedDrawings = await syncService.getAllDrawings();
+      final cachedState = DrawingState(
+        drawingDataList: _filterByCurrentMap(cachedDrawings),
+        selectedColor: Colors.red,
+        strokeWidth: 3,
+        isDrawingMode: false,
+      );
+      state = AsyncValue.data(cachedState);
+
+      if (currentUserId == null) {
+        // No remap path for guest — cached IS the final state.
+        return cachedState;
+      }
+
+      // Wait for map sync to publish its id mapping. We CANNOT use
+      // `ref.watch(mapsProvider.future)` — that resolves at maps'
+      // mid-build cached publish, before mapping is set, and the
+      // subsequent remap runs against an empty map. `syncDone` fires
+      // only after mapping is published.
+      final mapsNotifier = ref.read(mapsProvider.notifier);
+      await mapsNotifier.syncDone;
+
+      final idMapping = ref.read(mapIdMappingProvider);
+      if (idMapping.isNotEmpty) {
+        await syncService.remapLocalMapIds(idMapping);
+      }
+
+      final initialState = await _publishMergedFromStorage(syncService);
+
+      _syncInBackground(syncService);
+
+      return initialState;
+    } finally {
+      if (!_syncCompleter.isCompleted) _syncCompleter.complete();
     }
-
-    final allDrawings = await syncService.getAllDrawings();
-    final filteredDrawings = _filterByCurrentMap(allDrawings);
-
-    final initialState = DrawingState(
-      drawingDataList: filteredDrawings,
-      selectedColor: Colors.red,
-      strokeWidth: 3,
-      isDrawingMode: false,
-    );
-
-    state = AsyncValue.data(initialState);
-
-    _syncInBackground(syncService);
-
-    return initialState;
   }
 
   Future<void> _syncInBackground(DrawingSyncService syncService) async {
     try {
       await syncService.syncWithServer();
-      final allDrawings = await syncService.getAllDrawings();
-      final filteredDrawings = _filterByCurrentMap(allDrawings);
-      final current = state.valueOrNull;
-      if (current != null && current.eraserTempPaths == null) {
-        state = AsyncValue.data(
-          current.copyWith(drawingDataList: filteredDrawings),
-        );
-      }
+      // Don't clobber an in-progress eraser preview with server refresh.
+      if (state.valueOrNull?.eraserTempPaths != null) return;
+      await _publishMergedFromStorage(syncService);
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('Background sync failed: $e\n$st');
       }
     }
+  }
+
+  /// Reads drawings from storage, filters by current map, and publishes
+  /// a merged DrawingState — preserving any drawings the user added
+  /// optimistically via [addPath] while this method was waiting, and
+  /// preserving user-modified fields on the current DrawingState (color,
+  /// stroke width, drawing/eraser mode, undo/redo stacks). Storage
+  /// doesn't include an optimistic drawing until its server round-trip
+  /// persists it, so a naive overwrite would flash the stroke off the
+  /// canvas until the next refresh.
+  Future<DrawingState> _publishMergedFromStorage(
+      DrawingSyncService syncService) async {
+    final allDrawings = await syncService.getAllDrawings();
+    final filteredDrawings = _filterByCurrentMap(allDrawings);
+
+    final current = state.valueOrNull;
+    final currentDrawings = current?.drawingDataList ?? const <DrawingData>[];
+    final freshIds = filteredDrawings.map((d) => d.id).toSet();
+    final preserved =
+        currentDrawings.where((d) => !freshIds.contains(d.id)).toList();
+    final mergedDrawings = [...preserved, ...filteredDrawings];
+
+    final nextState = current != null
+        ? current.copyWith(drawingDataList: mergedDrawings)
+        : DrawingState(
+            drawingDataList: mergedDrawings,
+            selectedColor: Colors.red,
+            strokeWidth: 3,
+            isDrawingMode: false,
+          );
+    state = AsyncValue.data(nextState);
+    return nextState;
   }
 
   void toggleDrawingMode() {

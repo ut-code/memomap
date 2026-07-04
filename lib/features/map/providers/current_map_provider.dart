@@ -190,9 +190,10 @@ class CurrentMapIdNotifier extends StateNotifier<String?> {
     Future.microtask(() async {
       if (!mounted) return;
       try {
-        // Wait for mapsProvider to fully settle so syncWithServer is done
-        // and any local→server id mapping is published.
-        await _ref.read(mapsProvider.future);
+        // Wait for mapsProvider to fully settle (sync + mapping publish).
+        // `.future` would resolve at maps' mid-build cached publish —
+        // before mapping is set — so we use `notifier.syncDone` instead.
+        await _ref.read(mapsProvider.notifier).syncDone;
         if (!mounted) return;
 
         // The freshly-created map's id may have been remapped by sync
@@ -209,9 +210,10 @@ class CurrentMapIdNotifier extends StateNotifier<String?> {
         if (ours == null || others.isEmpty) return;
 
         // Wait for pins/drawings to settle so we read post-remap state.
+        // Same reason as maps above: `.future` resolves too early.
         try {
-          await _ref.read(pinsProvider.future);
-          await _ref.read(drawingProvider.future);
+          await _ref.read(pinsProvider.notifier).syncDone;
+          await _ref.read(drawingProvider.notifier).syncDone;
         } catch (_) {
           // If either fails, be conservative and skip cleanup — we'd
           // rather keep a redundant empty map than delete one that

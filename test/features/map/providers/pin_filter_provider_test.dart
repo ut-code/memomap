@@ -29,6 +29,9 @@ class _FakePinsNotifier extends AsyncNotifier<List<PinData>>
   }
 
   @override
+  Future<void> get syncDone => Future.value();
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

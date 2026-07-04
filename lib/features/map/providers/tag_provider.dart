@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
@@ -39,49 +41,65 @@ final tagsProvider = AsyncNotifierProvider<TagsNotifier, List<TagData>>(() {
 });
 
 class TagsNotifier extends AsyncNotifier<List<TagData>> {
+  Completer<void> _syncCompleter = Completer<void>();
+
+  /// Resolves when this build's sync (upload + `tagIdMappingProvider`
+  /// publish) has finished. See [MapsNotifier.syncDone] for why the
+  /// standard `.future` is unsuitable here.
+  Future<void> get syncDone => _syncCompleter.future;
+
   @override
   Future<List<TagData>> build() async {
-    ref.listen(sessionProvider, (prev, next) {
-      final prevUserId = prev?.valueOrNull?.user.id;
-      final nextUserId = next.valueOrNull?.user.id;
-      if (prevUserId != nextUserId) {
-        ref.invalidateSelf();
-      }
-    });
-
-    final syncService = await ref.watch(tagSyncServiceProvider.future);
-    final session = ref.read(sessionProvider).valueOrNull;
-    final currentUserId = session?.user.id;
-    final isAuthenticated = ref.read(isAuthenticatedProvider);
-
-    await syncService.clearIfUserChanged(currentUserId);
-
-    // Optimistic display: show cached tags immediately while sync runs.
-    final cached = await syncService.getAllTags();
-    state = AsyncValue.data(cached);
-
-    if (isAuthenticated) {
-      // Await the sync so pinsProvider (which awaits this provider's
-      // future) can rely on tagIdMappingProvider being settled before it
-      // runs its own sync. Otherwise local tag UUIDs leak into
-      // pendingTagUpdates and the subsequent PATCH /api/pins/:id fails
-      // with "Invalid tagIds" (400). The cached state above keeps the UI
-      // populated during the wait.
-      Map<String, String> idMapping = {};
-      try {
-        idMapping = await syncService.syncWithServer();
-      } catch (e, st) {
-        if (kDebugMode) {
-          debugPrint('Tag sync failed: $e\n$st');
-        }
-      }
-      ref.read(tagIdMappingProvider.notifier).state = idMapping;
-      final fresh = await syncService.getAllTags();
-      state = AsyncValue.data(fresh);
-      return fresh;
+    // Reset synchronously — see MapsNotifier.build for rationale.
+    if (_syncCompleter.isCompleted) {
+      _syncCompleter = Completer<void>();
     }
 
-    return cached;
+    try {
+      ref.listen(sessionProvider, (prev, next) {
+        final prevUserId = prev?.valueOrNull?.user.id;
+        final nextUserId = next.valueOrNull?.user.id;
+        if (prevUserId != nextUserId) {
+          ref.invalidateSelf();
+        }
+      });
+
+      final syncService = await ref.watch(tagSyncServiceProvider.future);
+      final session = ref.read(sessionProvider).valueOrNull;
+      final currentUserId = session?.user.id;
+      final isAuthenticated = ref.read(isAuthenticatedProvider);
+
+      await syncService.clearIfUserChanged(currentUserId);
+
+      // Optimistic display: show cached tags immediately while sync runs.
+      final cached = await syncService.getAllTags();
+      state = AsyncValue.data(cached);
+
+      if (isAuthenticated) {
+        // Await the sync so pinsProvider (which awaits `syncDone` above)
+        // can rely on tagIdMappingProvider being settled before it runs
+        // its own sync. Otherwise local tag UUIDs leak into
+        // pendingTagUpdates and the subsequent PATCH /api/pins/:id fails
+        // with "Invalid tagIds" (400). The cached state above keeps the
+        // UI populated during the wait.
+        Map<String, String> idMapping = {};
+        try {
+          idMapping = await syncService.syncWithServer();
+        } catch (e, st) {
+          if (kDebugMode) {
+            debugPrint('Tag sync failed: $e\n$st');
+          }
+        }
+        ref.read(tagIdMappingProvider.notifier).state = idMapping;
+        final fresh = await syncService.getAllTags();
+        state = AsyncValue.data(fresh);
+        return fresh;
+      }
+
+      return cached;
+    } finally {
+      if (!_syncCompleter.isCompleted) _syncCompleter.complete();
+    }
   }
 
   Future<TagData?> createTag({required String name, required int color}) async {
