@@ -6,8 +6,10 @@ import 'package:memomap/features/map/data/local_pin_storage.dart';
 import 'package:memomap/features/map/data/network_checker.dart';
 import 'package:memomap/features/map/data/pin_repository.dart';
 import 'package:memomap/features/map/providers/current_map_provider.dart';
-import 'package:memomap/features/map/providers/map_provider.dart' show mapIdMappingProvider;
-import 'package:memomap/features/map/providers/tag_provider.dart' show tagIdMappingProvider;
+import 'package:memomap/features/map/providers/map_provider.dart'
+    show mapIdMappingProvider, mapsProvider;
+import 'package:memomap/features/map/providers/tag_provider.dart'
+    show tagIdMappingProvider, tagsProvider;
 import 'package:memomap/features/map/services/pin_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -76,11 +78,20 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
     // Clear before reading to avoid briefly showing previous user's data
     await syncService.clearIfUserChanged(currentUserId);
 
-    final allPins = await syncService.getAllPins();
-    final filteredPins = _filterByCurrentMap(allPins);
-    state = AsyncValue.data(filteredPins);
+    // Optimistic display: show cached pins immediately while we wait for
+    // dependent providers (maps, tags) to settle.
+    final initialPins = await syncService.getAllPins();
+    state = AsyncValue.data(_filterByCurrentMap(initialPins));
 
     if (currentUserId != null) {
+      // Wait for BOTH map and tag sync to settle. Their builds publish
+      // mapIdMappingProvider / tagIdMappingProvider during sync, and local
+      // pins reference local map/tag IDs that must be remapped before
+      // they upload — otherwise pendingTagUpdates carry local UUIDs and
+      // the subsequent PATCH /api/pins/:id returns 400.
+      await ref.watch(mapsProvider.future);
+      await ref.watch(tagsProvider.future);
+
       final idMapping = ref.read(mapIdMappingProvider);
       if (idMapping.isNotEmpty) {
         await syncService.remapLocalMapIds(idMapping);
@@ -89,6 +100,13 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
       if (tagMapping.isNotEmpty) {
         await syncService.remapLocalTagIds(tagMapping);
       }
+    }
+
+    final allPins = await syncService.getAllPins();
+    final filteredPins = _filterByCurrentMap(allPins);
+    state = AsyncValue.data(filteredPins);
+
+    if (currentUserId != null) {
       _syncInBackground(syncService);
     }
 

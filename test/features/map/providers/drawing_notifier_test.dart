@@ -502,6 +502,33 @@ void main() {
     );
 
     test(
+      'optimistic UI: drawingProvider shows cached drawings immediately on build (no AsyncLoading flash)',
+      () async {
+        // Without optimistic display, drawingProvider stays AsyncLoading
+        // until syncService.getAllDrawings resolves, flashing an empty
+        // canvas. Verify that as soon as the cached drawings are read,
+        // they're published to state.
+        final cached = createDrawing('cached', testPath1);
+        container = createContainer(initialDrawings: [cached]);
+
+        // Trigger the build but don't await its future — we want to
+        // observe the mid-build optimistic state set.
+        container.read(drawingProvider);
+
+        for (var i = 0; i < 10; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+
+        final state = container.read(drawingProvider).valueOrNull;
+        expect(state, isNotNull,
+            reason:
+                'cached drawings should be in state before any settle delay');
+        expect(state!.drawingDataList.length, 1);
+        expect(state.drawingDataList.first.id, 'cached');
+      },
+    );
+
+    test(
       'concurrent addPath calls should be serialized',
       () async {
         container = createContainer();

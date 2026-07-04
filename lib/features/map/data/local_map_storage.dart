@@ -13,8 +13,10 @@ abstract interface class LocalMapStorageBase {
   Future<List<String>> getPendingDeletions();
   Future<void> setPendingDeletions(List<String> ids);
 
-  Future<String?> getCurrentMapId();
-  Future<void> setCurrentMapId(String? mapId);
+  /// Reads the saved current map id for [userId]. Guest sessions pass null.
+  /// Stored per-user so logout → re-login restores the same selection.
+  Future<String?> getCurrentMapId(String? userId);
+  Future<void> setCurrentMapId(String? userId, String? mapId);
 
   Future<String?> getLastUserId();
   Future<void> setLastUserId(String? userId);
@@ -26,7 +28,9 @@ class SharedPreferencesLocalMapStorage implements LocalMapStorageBase {
   static const _cachedMapsKey = 'memomap_cached_maps';
   static const _localMapsKey = 'memomap_local_maps';
   static const _pendingDeletionsKey = 'memomap_map_pending_deletions';
-  static const _currentMapIdKey = 'memomap_current_map_id';
+  static const _currentMapIdGuestKey = 'memomap_current_map_id';
+  static String _currentMapIdKeyFor(String? userId) =>
+      userId == null ? _currentMapIdGuestKey : 'memomap_current_map_id_$userId';
   static const _lastUserIdKey = 'memomap_map_last_user_id';
 
   final SharedPreferencesAsync _prefs;
@@ -74,16 +78,17 @@ class SharedPreferencesLocalMapStorage implements LocalMapStorageBase {
   }
 
   @override
-  Future<String?> getCurrentMapId() async {
-    return _prefs.getString(_currentMapIdKey);
+  Future<String?> getCurrentMapId(String? userId) async {
+    return _prefs.getString(_currentMapIdKeyFor(userId));
   }
 
   @override
-  Future<void> setCurrentMapId(String? mapId) async {
+  Future<void> setCurrentMapId(String? userId, String? mapId) async {
+    final key = _currentMapIdKeyFor(userId);
     if (mapId == null) {
-      await _prefs.remove(_currentMapIdKey);
+      await _prefs.remove(key);
     } else {
-      await _prefs.setString(_currentMapIdKey, mapId);
+      await _prefs.setString(key, mapId);
     }
   }
 
@@ -103,11 +108,12 @@ class SharedPreferencesLocalMapStorage implements LocalMapStorageBase {
 
   @override
   Future<void> clearAll() async {
+    // Per-user current map id keys are preserved so logout → re-login
+    // restores the same selection. Guest selection is also kept.
     await Future.wait([
       _prefs.remove(_cachedMapsKey),
       _prefs.remove(_localMapsKey),
       _prefs.remove(_pendingDeletionsKey),
-      _prefs.remove(_currentMapIdKey),
     ]);
   }
 

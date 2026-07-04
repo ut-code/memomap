@@ -60,9 +60,9 @@ class MapsNotifier extends AsyncNotifier<List<MapData>> {
     if (isAuthenticated) {
       final idMapping = await syncService.syncWithServer();
 
-      if (idMapping.isNotEmpty) {
-        ref.read(mapIdMappingProvider.notifier).state = idMapping;
-      }
+      // Always publish the latest result (including {}) so downstream
+      // providers see fresh state rather than a stale prior-session mapping.
+      ref.read(mapIdMappingProvider.notifier).state = idMapping;
 
       final freshMaps = await syncService.getAllMaps();
       state = AsyncValue.data(freshMaps);

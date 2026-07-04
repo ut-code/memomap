@@ -8,7 +8,8 @@ import 'package:memomap/features/map/data/drawing_repository.dart';
 import 'package:memomap/features/map/data/local_drawing_storage.dart';
 import 'package:memomap/features/map/models/drawing_path.dart';
 import 'package:memomap/features/map/providers/current_map_provider.dart';
-import 'package:memomap/features/map/providers/map_provider.dart' show mapIdMappingProvider;
+import 'package:memomap/features/map/providers/map_provider.dart'
+    show mapIdMappingProvider, mapsProvider;
 import 'package:memomap/features/map/providers/pin_provider.dart';
 import 'package:memomap/features/map/services/drawing_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -192,6 +193,36 @@ class DrawingNotifier extends AsyncNotifier<DrawingState> {
 
     await syncService.clearIfUserChanged(currentUserId);
 
+    // Optimistic display: show cached drawings immediately so the UI
+    // doesn't flash an empty canvas while we wait for maps to settle.
+    final cachedDrawings = await syncService.getAllDrawings();
+    final cachedState = DrawingState(
+      drawingDataList: _filterByCurrentMap(cachedDrawings),
+      selectedColor: Colors.red,
+      strokeWidth: 3,
+      isDrawingMode: false,
+    );
+    state = AsyncValue.data(cachedState);
+
+    if (currentUserId == null) {
+      // No remap path for guest — what we cached IS the final state.
+      // Skipping the redundant second fetch/state set is important: the
+      // race-condition tests await drawingProvider.future and immediately
+      // start calling addPath. Riverpod resolves .future on the first
+      // AsyncData state set (above), so any second state set inside build
+      // would race with — and clobber — addPath's optimistic updates.
+      return cachedState;
+    }
+
+    // Wait for map sync to settle so local drawings can be remapped
+    // to server map IDs before they upload.
+    await ref.watch(mapsProvider.future);
+
+    final idMapping = ref.read(mapIdMappingProvider);
+    if (idMapping.isNotEmpty) {
+      await syncService.remapLocalMapIds(idMapping);
+    }
+
     final allDrawings = await syncService.getAllDrawings();
     final filteredDrawings = _filterByCurrentMap(allDrawings);
 
@@ -204,13 +235,7 @@ class DrawingNotifier extends AsyncNotifier<DrawingState> {
 
     state = AsyncValue.data(initialState);
 
-    if (currentUserId != null) {
-      final idMapping = ref.read(mapIdMappingProvider);
-      if (idMapping.isNotEmpty) {
-        await syncService.remapLocalMapIds(idMapping);
-      }
-      _syncInBackground(syncService);
-    }
+    _syncInBackground(syncService);
 
     return initialState;
   }

@@ -522,7 +522,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(currentMap?.name ?? (currentMapId != null ? 'Loading...' : 'Memomap')),
+              Flexible(
+                child: Text(
+                  currentMap?.name ??
+                      (currentMapId != null ? 'Loading...' : 'Memomap'),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               const SizedBox(width: 4),
               const Icon(Icons.arrow_drop_down, size: 20),
             ],

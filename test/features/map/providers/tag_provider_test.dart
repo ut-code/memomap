@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
@@ -113,6 +115,52 @@ void main() {
 
       expect(container.read(tagIdMappingProvider), mapping);
       verify(() => mockSyncService.syncWithServer()).called(1);
+    });
+
+    test(
+        'optimistic UI: state shows cached tags while syncWithServer is in flight',
+        () async {
+      final cachedTag = _tag('cached-1');
+      final freshTag = _tag('fresh-1');
+
+      final syncCompleter = Completer<Map<String, String>>();
+      var getCallCount = 0;
+
+      // 1st call (pre-sync) → cached. 2nd call (post-sync) → fresh.
+      when(() => mockSyncService.getAllTags()).thenAnswer((_) async {
+        getCallCount++;
+        return getCallCount == 1 ? [cachedTag] : [freshTag];
+      });
+      when(() => mockSyncService.syncWithServer())
+          .thenAnswer((_) => syncCompleter.future);
+
+      final container = _makeContainer(
+        mockSyncService: mockSyncService,
+        isAuthenticated: true,
+      );
+      addTearDown(container.dispose);
+
+      // Kick off build but don't await — sync is pending.
+      container.read(tagsProvider);
+      // Let the mid-build state set propagate.
+      for (var i = 0; i < 10; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      // UI should already see the cached tag, even though sync hasn't
+      // completed.
+      final state1 = container.read(tagsProvider).valueOrNull;
+      expect(state1, isNotNull,
+          reason: 'cached state should be exposed before sync settles');
+      expect(state1!.single.id, 'cached-1');
+
+      // Complete the sync — build resumes, 2nd getAllTags returns fresh.
+      syncCompleter.complete(<String, String>{});
+      for (var i = 0; i < 10; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final state2 = container.read(tagsProvider).valueOrNull;
+      expect(state2!.single.id, 'fresh-1');
     });
 
     test('createTag appends the created tag to state', () async {

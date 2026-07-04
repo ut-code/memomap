@@ -56,29 +56,32 @@ class TagsNotifier extends AsyncNotifier<List<TagData>> {
 
     await syncService.clearIfUserChanged(currentUserId);
 
+    // Optimistic display: show cached tags immediately while sync runs.
     final cached = await syncService.getAllTags();
     state = AsyncValue.data(cached);
 
     if (isAuthenticated) {
-      _syncInBackground(syncService);
+      // Await the sync so pinsProvider (which awaits this provider's
+      // future) can rely on tagIdMappingProvider being settled before it
+      // runs its own sync. Otherwise local tag UUIDs leak into
+      // pendingTagUpdates and the subsequent PATCH /api/pins/:id fails
+      // with "Invalid tagIds" (400). The cached state above keeps the UI
+      // populated during the wait.
+      Map<String, String> idMapping = {};
+      try {
+        idMapping = await syncService.syncWithServer();
+      } catch (e, st) {
+        if (kDebugMode) {
+          debugPrint('Tag sync failed: $e\n$st');
+        }
+      }
+      ref.read(tagIdMappingProvider.notifier).state = idMapping;
+      final fresh = await syncService.getAllTags();
+      state = AsyncValue.data(fresh);
+      return fresh;
     }
 
     return cached;
-  }
-
-  Future<void> _syncInBackground(TagSyncService syncService) async {
-    try {
-      final idMapping = await syncService.syncWithServer();
-      if (idMapping.isNotEmpty) {
-        ref.read(tagIdMappingProvider.notifier).state = idMapping;
-      }
-      final fresh = await syncService.getAllTags();
-      state = AsyncValue.data(fresh);
-    } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('Tag background sync failed: $e\n$st');
-      }
-    }
   }
 
   Future<TagData?> createTag({required String name, required int color}) async {

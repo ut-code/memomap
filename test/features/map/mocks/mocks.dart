@@ -9,6 +9,8 @@ import 'package:memomap/features/map/data/map_repository.dart';
 import 'package:memomap/features/map/data/network_checker.dart';
 import 'package:memomap/features/map/data/pin_repository_base.dart';
 import 'package:memomap/features/map/data/tag_repository.dart';
+import 'package:memomap/features/map/services/map_sync_service.dart';
+import 'package:memomap/features/map/services/pin_sync_service.dart';
 import 'package:memomap/features/map/services/tag_sync_service.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -31,6 +33,10 @@ class MockLocalTagStorage extends Mock implements LocalTagStorageBase {}
 class MockTagRepository extends Mock implements TagRepositoryBase {}
 
 class MockTagSyncService extends Mock implements TagSyncService {}
+
+class MockPinSyncService extends Mock implements PinSyncService {}
+
+class MockMapSyncService extends Mock implements MapSyncService {}
 
 class MockApiClient extends Mock implements ApiClient {}
 
