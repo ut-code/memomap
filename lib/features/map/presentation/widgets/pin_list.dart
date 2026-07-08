@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:memomap/features/map/providers/pin_provider.dart';
+import 'package:memomap/features/map/providers/map_bounds_provider.dart';
 
 class PinList extends ConsumerWidget {
   const PinList({super.key, this.onSheetSizeChanged});
@@ -12,6 +13,7 @@ class PinList extends ConsumerWidget {
     final pinsAsync = ref.watch(pinsProvider);
     final pinsNotifier = ref.watch(pinsProvider.notifier);
     final colorScheme = Theme.of(context).colorScheme;
+    final mapBounds = ref.watch(mapBoundsProvider);
     return DraggableScrollableSheet(
       initialChildSize: 0.2,
       minChildSize: 0.05,
@@ -43,6 +45,9 @@ class PinList extends ConsumerWidget {
                       itemCount: pins.length,
                       itemBuilder: (context, index) {
                         final pin = pins[index];
+                        final isOutOfBounds = mapBounds != null && 
+                            !mapBounds.contains(pin.position);
+                        
                         return Dismissible(
                           key: ValueKey(pin),
                           onDismissed: (direction) {
@@ -65,7 +70,31 @@ class PinList extends ConsumerWidget {
                           },
                           child: ListTile(
                             leading: Image.asset('assets/pin.png'),
-                            title: Text('ピン'),
+                            title: Row(
+                              children: [
+                                const Text('ピン'),
+                                if (isOutOfBounds) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: colorScheme.errorContainer,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      '表示範囲外',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: colorScheme.onErrorContainer,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
                             subtitle: Text(
                               '緯度: ${pin.position.latitude.toStringAsFixed(4)}, 経度: ${pin.position.longitude.toStringAsFixed(4)}',
                             ),

@@ -2,7 +2,6 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:memomap/features/map/data/drawing_repository.dart';
 import 'package:memomap/features/map/models/drawing_path.dart';
 import 'package:memomap/features/map/providers/drawing_provider.dart';
 
@@ -84,19 +83,22 @@ void main() {
         expect(identical(state.paths[0], testPath1), true);
       });
 
-      test('returns drawingDataList paths when eraser operation is not active', () {
-        final drawing1 = createTestDrawing('drawing-1', testPath1);
-        final drawing2 = createTestDrawing('drawing-2', testPath2);
+      test(
+        'returns drawingDataList paths when eraser operation is not active',
+        () {
+          final drawing1 = createTestDrawing('drawing-1', testPath1);
+          final drawing2 = createTestDrawing('drawing-2', testPath2);
 
-        final state = DrawingState(
-          drawingDataList: [drawing1, drawing2],
-          selectedColor: const Color(0xFFFF0000),
-          strokeWidth: 3.0,
-          isDrawingMode: true,
-        );
+          final state = DrawingState(
+            drawingDataList: [drawing1, drawing2],
+            selectedColor: const Color(0xFFFF0000),
+            strokeWidth: 3.0,
+            isDrawingMode: true,
+          );
 
-        expect(state.paths.length, 2);
-      });
+          expect(state.paths.length, 2);
+        },
+      );
     });
 
     group('undoStack', () {
@@ -120,7 +122,7 @@ void main() {
           strokeWidth: 3.0,
           isDrawingMode: true,
           undoStack: [
-            [drawing1]
+            [drawing1],
           ],
         );
 
@@ -157,7 +159,7 @@ void main() {
           strokeWidth: 3.0,
           isDrawingMode: true,
           undoStack: [
-            [drawing1, drawing2]
+            [drawing1, drawing2],
           ],
         );
 
@@ -197,7 +199,9 @@ void main() {
         );
 
         // Push (save drawing1), then change to drawing1+drawing2
-        state = state.pushUndo().copyWith(drawingDataList: [drawing1, drawing2]);
+        state = state.pushUndo().copyWith(
+          drawingDataList: [drawing1, drawing2],
+        );
 
         // Push (save drawing1+drawing2), then change to drawing3 only
         state = state.pushUndo().copyWith(drawingDataList: [drawing3]);
@@ -244,7 +248,7 @@ void main() {
           strokeWidth: 3.0,
           isDrawingMode: true,
           redoStack: [
-            [drawing1]
+            [drawing1],
           ],
         );
 
@@ -278,7 +282,7 @@ void main() {
           strokeWidth: 3.0,
           isDrawingMode: true,
           redoStack: [
-            [drawing1, drawing2]
+            [drawing1, drawing2],
           ],
         );
 
@@ -313,7 +317,7 @@ void main() {
           strokeWidth: 3.0,
           isDrawingMode: true,
           redoStack: [
-            [drawing1]
+            [drawing1],
           ],
         );
 
@@ -335,7 +339,13 @@ void main() {
         );
 
         // Add drawing3: push to undo, change state
-        state = state.pushUndo().copyWith(drawingDataList: [drawing1, drawing2, createTestDrawing('drawing-3', testPath3)]);
+        state = state.pushUndo().copyWith(
+          drawingDataList: [
+            drawing1,
+            drawing2,
+            createTestDrawing('drawing-3', testPath3),
+          ],
+        );
         expect(state.drawingDataList.length, 3);
         expect(state.undoStack.length, 1);
 

@@ -52,9 +52,17 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>io.supabase.memomap</string>
+				<string>com.googleusercontent.apps.516760679211-j91nm9cfglf02q20c9r5idh33ejhoiig</string>
 			</array>
 		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>516760679211-j91nm9cfglf02q20c9r5idh33ejhoiig.apps.googleusercontent.com</string>
+	<key>LSApplicationQueriesSchemes</key>
+<array>
+    <string>google</string>
+    <string>googlechrome</string>
+    <string>com.googleusercontent.apps.516760679211-j91nm9cfglf02q20c9r5idh33ejhoiig</string>
+</array>
 </dict>
 </plist>
