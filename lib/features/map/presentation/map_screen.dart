@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:go_router/go_router.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
 import 'package:memomap/features/map/providers/current_map_provider.dart';
 import 'package:memomap/features/map/providers/map_provider.dart';
@@ -10,6 +10,7 @@ import 'package:memomap/features/map/providers/drawing_provider.dart';
 import 'package:memomap/features/map/providers/map_bounds_provider.dart';
 import 'package:memomap/features/map/models/drawing_path.dart';
 import 'package:memomap/features/map/presentation/widgets/controls.dart';
+import 'package:memomap/features/map/presentation/widgets/map_search_bar.dart';
 import 'package:memomap/features/map/presentation/widgets/pin_list.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:flutter/services.dart';
@@ -702,6 +703,16 @@ class _MapScreenState extends ConsumerState<MapScreen> {
               const Controls(),
             ],
           ),
+          if (currentMap != null)
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: MapSearchBar(
+                mapboxMap: _mapboxMap,
+                onSearchCompleted: _updateMapBounds,
+              ),
+            ),
           if (currentMap == null &&
               currentMapId == null &&
               !mapsAsync.isLoading)
