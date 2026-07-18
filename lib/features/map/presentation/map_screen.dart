@@ -13,6 +13,7 @@ import 'package:memomap/features/map/presentation/widgets/controls.dart';
 import 'package:memomap/features/map/presentation/widgets/map_search_bar.dart';
 import 'package:memomap/features/map/presentation/widgets/pin_list.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart' as geo;
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
 import 'dart:convert';
@@ -79,8 +80,114 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     _updatePins();
     _updateMapBounds();
+    await _checkAndEnableLocation();
 
     setState(() {});
+  }
+
+  Future<void> _checkAndEnableLocation() async {
+    final permission = await geo.Geolocator.checkPermission();
+    if (permission == geo.LocationPermission.whileInUse ||
+        permission == geo.LocationPermission.always) {
+      await _enableLocationPuck();
+
+      try {
+        final position = await geo.Geolocator.getLastKnownPosition() ??
+            await geo.Geolocator.getCurrentPosition(
+              locationSettings: const geo.LocationSettings(
+                accuracy: geo.LocationAccuracy.high,
+              ),
+            );
+
+        if (_mapboxMap != null) {
+          await _mapboxMap!.setCamera(
+            CameraOptions(
+              center: Point(
+                coordinates: Position(position.longitude, position.latitude),
+              ),
+              zoom: 15.0,
+            ),
+          );
+          await _updateMapBounds();
+        }
+      } catch (e) {
+        debugPrint("Error getting startup location: $e");
+      }
+    }
+  }
+
+  Future<void> _enableLocationPuck() async {
+    if (_mapboxMap == null) return;
+    await _mapboxMap!.location.updateSettings(
+      LocationComponentSettings(
+        enabled: true,
+        pulsingEnabled: true,
+      ),
+    );
+  }
+
+  Future<void> _moveToCurrentLocation() async {
+    bool serviceEnabled = await geo.Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('位置情報サービスが無効になっています。設定から有効にしてください。')),
+        );
+      }
+      return;
+    }
+
+    geo.LocationPermission permission = await geo.Geolocator.checkPermission();
+    if (permission == geo.LocationPermission.denied) {
+      permission = await geo.Geolocator.requestPermission();
+      if (permission == geo.LocationPermission.denied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('位置情報の権限が拒否されました。')),
+          );
+        }
+        return;
+      }
+    }
+
+    if (permission == geo.LocationPermission.deniedForever) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('位置情報の権限が永久に拒否されています。設定画面から許可してください。'),
+          ),
+        );
+      }
+      return;
+    }
+
+    await _enableLocationPuck();
+
+    try {
+      final position = await geo.Geolocator.getCurrentPosition(
+        locationSettings: const geo.LocationSettings(
+          accuracy: geo.LocationAccuracy.high,
+        ),
+      );
+
+      if (_mapboxMap != null) {
+        await _mapboxMap!.setCamera(
+          CameraOptions(
+            center: Point(
+              coordinates: Position(position.longitude, position.latitude),
+            ),
+            zoom: 15.0,
+          ),
+        );
+        await _updateMapBounds();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('現在地の取得に失敗しました: $e')),
+        );
+      }
+    }
   }
 
   void _onPinListExtentChanged(double extent) {
@@ -663,6 +770,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              FloatingActionButton(
+                                heroTag: 'my_location',
+                                onPressed: _moveToCurrentLocation,
+                                tooltip: 'Current location',
+                                child: const Icon(Icons.my_location),
+                              ),
+                              const SizedBox(height: 8),
                               FloatingActionButton(
                                 heroTag: 'zoom_in',
                                 onPressed: () async {
