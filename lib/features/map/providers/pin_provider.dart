@@ -152,6 +152,39 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
     }
   }
 
+  Future<void> updatePinMemo(String id, String? memo) async {
+    final current = state.value ?? [];
+    final exists = current.any((p) => p.id == id);
+    if (!exists) return;
+
+    // Optimistic update
+    state = AsyncValue.data(
+      current.map((p) {
+        if (p.id == id) {
+          return PinData(
+            id: p.id,
+            userId: p.userId,
+            mapId: p.mapId,
+            position: p.position,
+            createdAt: p.createdAt,
+            isLocal: p.isLocal,
+            memo: memo,
+          );
+        }
+        return p;
+      }).toList(),
+    );
+
+    try {
+      final syncService = await ref.read(pinSyncServiceProvider.future);
+      await syncService.updatePinMemo(pinId: id, memo: memo);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('Failed to persist memo: $e\n$st');
+      }
+    }
+  }
+
   Future<void> refresh() async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(() => build());

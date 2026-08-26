@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:memomap/features/map/providers/pin_provider.dart';
 import 'package:memomap/features/map/providers/map_bounds_provider.dart';
+import 'package:go_router/go_router.dart';
 
 class PinList extends ConsumerWidget {
   const PinList({super.key, this.onSheetSizeChanged});
@@ -98,9 +99,17 @@ class PinList extends ConsumerWidget {
                             subtitle: Text(
                               '緯度: ${pin.position.latitude.toStringAsFixed(4)}, 経度: ${pin.position.longitude.toStringAsFixed(4)}',
                             ),
-                            trailing: pin.isLocal
-                                ? const Icon(Icons.cloud_off)
-                                : const Icon(Icons.cloud_outlined),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                pin.isLocal ? const Icon(Icons.cloud_off) : const Icon(Icons.cloud_outlined),
+                                IconButton(
+                                  icon: const Icon(Icons.note_alt_outlined),
+                                  tooltip: 'メモ',
+                                  onPressed: () => context.push('/pin/${pin.id}/memo'),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       },

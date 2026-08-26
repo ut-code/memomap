@@ -5,6 +5,7 @@ import 'package:memomap/features/auth/presentation/login_screen.dart';
 import 'package:memomap/features/auth/providers/auth_provider.dart';
 import 'package:memomap/features/map/presentation/map_list_screen.dart';
 import 'package:memomap/features/map/presentation/map_screen.dart';
+import 'package:memomap/features/map/presentation/pin_memo_screen.dart';
 import 'package:memomap/features/profile/presentation/profile_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -46,6 +47,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/maps',
         builder: (context, state) => const MapListScreen(),
+      ),
+      GoRoute(
+        path: '/pin/:pinId/memo',
+        builder: (context, state) => PinMemoScreen(pinId: state.pathParameters['pinId'] ?? ''),
       ),
       GoRoute(
         path: '/auth-callback',
