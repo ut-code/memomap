@@ -18,6 +18,7 @@ PinData _createPinData({
   required num latitude,
   required num longitude,
   required String createdAt,
+  String? memo,
 }) =>
     PinData(
       id: id,
@@ -25,6 +26,7 @@ PinData _createPinData({
       mapId: mapId,
       position: LatLng(latitude.toDouble(), longitude.toDouble()),
       createdAt: DateTime.parse(createdAt),
+      memo: memo,
     );
 
 extension GetApiPinsResponseExt on GetApiPinsResponse {
@@ -67,6 +69,7 @@ class PinData {
   final LatLng position;
   final DateTime createdAt;
   final bool isLocal;
+  final String? memo;
 
   PinData({
     required this.id,
@@ -75,6 +78,7 @@ class PinData {
     required this.position,
     required this.createdAt,
     this.isLocal = false,
+    this.memo,
   });
 
   factory PinData.local(LatLng position, {String? mapId}) {
@@ -85,6 +89,7 @@ class PinData {
       position: position,
       createdAt: DateTime.now(),
       isLocal: true,
+      memo: null,
     );
   }
 
@@ -99,6 +104,7 @@ class PinData {
       ),
       createdAt: DateTime.parse(json['createdAt'] as String),
       isLocal: json['isLocal'] as bool? ?? false,
+      memo: json['memo'] as String?,
     );
   }
 
@@ -111,6 +117,7 @@ class PinData {
       'longitude': position.longitude,
       'createdAt': createdAt.toUtc().toIso8601String(),
       'isLocal': isLocal,
+      'memo': memo,
     };
   }
 }

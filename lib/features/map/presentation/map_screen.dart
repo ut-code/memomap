@@ -202,6 +202,12 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       ),
       items: [
         PopupMenuItem(
+          value: "memo",
+          child: Text(
+            "メモ",
+          ),
+        ),
+        PopupMenuItem(
           value: "delete",
           child: Text(
             "Delete",
@@ -221,6 +227,9 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
     if (selected == "delete") {
       ref.read(pinsProvider.notifier).deletePin(pin.id);
+    } else if (selected == "memo") {
+      // navigate to memo editor
+      context.push('/pin/${pin.id}/memo');
     }
   }
 

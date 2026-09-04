@@ -175,6 +175,57 @@ class PinSyncService {
     }
   }
 
+  /// Update memo for a pin locally. This updates either local pins or cached pins
+  /// depending on where the pin exists. This is stored only on the client side
+  /// (no server update is attempted here).
+  Future<void> updatePinMemo({required String pinId, required String? memo}) async {
+    final localPins = await storage.getLocalPins();
+    final cachedPins = await storage.getCachedPins();
+
+    var updated = false;
+
+    final newLocal = localPins.map((pin) {
+      if (pin.id == pinId) {
+        updated = true;
+        return PinData(
+          id: pin.id,
+          userId: pin.userId,
+          mapId: pin.mapId,
+          position: pin.position,
+          createdAt: pin.createdAt,
+          isLocal: pin.isLocal,
+          memo: memo,
+        );
+      }
+      return pin;
+    }).toList();
+
+    if (updated) {
+      await storage.setLocalPins(newLocal);
+      return;
+    }
+
+    final newCached = cachedPins.map((pin) {
+      if (pin.id == pinId) {
+        updated = true;
+        return PinData(
+          id: pin.id,
+          userId: pin.userId,
+          mapId: pin.mapId,
+          position: pin.position,
+          createdAt: pin.createdAt,
+          isLocal: pin.isLocal,
+          memo: memo,
+        );
+      }
+      return pin;
+    }).toList();
+
+    if (updated) {
+      await storage.setCachedPins(newCached);
+    }
+  }
+
   Future<void> clearIfUserChanged(String? currentUserId) async {
     final lastUserId = await storage.getLastUserId();
 
