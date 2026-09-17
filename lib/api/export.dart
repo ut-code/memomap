@@ -14,6 +14,8 @@ export 'models/get_api_me_response.dart';
 export 'models/get_api_pins_response.dart';
 export 'models/post_api_pins_response.dart';
 export 'models/api_pins_request_body.dart';
+export 'models/put_api_pins_id_response.dart';
+export 'models/api_pins_id_request_body.dart';
 export 'models/post_api_pins_batch_response.dart';
 export 'models/pins.dart';
 export 'models/api_pins_batch_request_body.dart';

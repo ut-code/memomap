@@ -1,11 +1,13 @@
 import 'package:latlong2/latlong.dart';
 import 'package:memomap/api/api_client.dart';
 import 'package:memomap/api/models/api_pins_batch_request_body.dart';
+import 'package:memomap/api/models/api_pins_id_request_body.dart';
 import 'package:memomap/api/models/api_pins_request_body.dart';
 import 'package:memomap/api/models/get_api_pins_response.dart';
 import 'package:memomap/api/models/pins.dart';
 import 'package:memomap/api/models/post_api_pins_batch_response.dart';
 import 'package:memomap/api/models/post_api_pins_response.dart';
+import 'package:memomap/api/models/put_api_pins_id_response.dart';
 import 'package:memomap/config/backend_config.dart';
 import 'package:memomap/features/auth/data/token_storage.dart';
 import 'package:memomap/features/map/data/pin_repository_base.dart';
@@ -37,6 +39,7 @@ extension GetApiPinsResponseExt on GetApiPinsResponse {
         latitude: latitude,
         longitude: longitude,
         createdAt: createdAt,
+        memo: memo,
       );
 }
 
@@ -48,6 +51,7 @@ extension PostApiPinsResponseExt on PostApiPinsResponse {
         latitude: latitude,
         longitude: longitude,
         createdAt: createdAt,
+        memo: memo,
       );
 }
 
@@ -59,8 +63,23 @@ extension PostApiPinsBatchResponseExt on PostApiPinsBatchResponse {
         latitude: latitude,
         longitude: longitude,
         createdAt: createdAt,
+        memo: memo,
       );
 }
+
+extension PutApiPinsIdResponseExt on PutApiPinsIdResponse {
+  PinData toPinData() => _createPinData(
+        id: id,
+        userId: userId,
+        mapId: mapId,
+        latitude: latitude,
+        longitude: longitude,
+        createdAt: createdAt,
+        memo: memo,
+      );
+}
+
+const _sentinel = Object();
 
 class PinData {
   final String id;
@@ -81,7 +100,7 @@ class PinData {
     this.memo,
   });
 
-  factory PinData.local(LatLng position, {String? mapId}) {
+  factory PinData.local(LatLng position, {String? mapId, String? memo}) {
     return PinData(
       id: const Uuid().v4(),
       userId: null,
@@ -89,7 +108,27 @@ class PinData {
       position: position,
       createdAt: DateTime.now(),
       isLocal: true,
-      memo: null,
+      memo: memo,
+    );
+  }
+
+  PinData copyWith({
+    String? id,
+    String? userId,
+    String? mapId,
+    LatLng? position,
+    DateTime? createdAt,
+    bool? isLocal,
+    Object? memo = _sentinel,
+  }) {
+    return PinData(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      mapId: mapId ?? this.mapId,
+      position: position ?? this.position,
+      createdAt: createdAt ?? this.createdAt,
+      isLocal: isLocal ?? this.isLocal,
+      memo: identical(memo, _sentinel) ? this.memo : memo as String?,
     );
   }
 
@@ -150,7 +189,7 @@ class PinRepository implements PinRepositoryBase {
   }
 
   @override
-  Future<PinData?> addPin(LatLng position, {String? mapId}) async {
+  Future<PinData?> addPin(LatLng position, {String? mapId, String? memo}) async {
     if (!await _isAuthenticated()) return null;
 
     final response = await _api.pins.postApiPins(
@@ -158,6 +197,26 @@ class PinRepository implements PinRepositoryBase {
         latitude: position.latitude,
         longitude: position.longitude,
         mapId: mapId,
+        memo: memo,
+      ),
+    );
+
+    return response.toPinData();
+  }
+
+  @override
+  Future<PinData?> updatePin(
+    String id, {
+    LatLng? position,
+    String? mapId,
+    String? memo,
+  }) async {
+    if (!await _isAuthenticated()) return null;
+
+    final response = await _api.pins.putApiPinsById(
+      id: id,
+      body: ApiPinsIdRequestBody(
+        memo: memo,
       ),
     );
 
@@ -182,6 +241,7 @@ class PinRepository implements PinRepositoryBase {
                   latitude: pin.position.latitude,
                   longitude: pin.position.longitude,
                   mapId: pin.mapId ?? mapId,
+                  memo: pin.memo,
                 ))
             .toList(),
       ),

@@ -97,6 +97,7 @@ export const pins = pgTable("pins", {
 	mapId: uuid("map_id").references(() => maps.id, { onDelete: "cascade" }),
 	latitude: doublePrecision("latitude").notNull(),
 	longitude: doublePrecision("longitude").notNull(),
+	memo: text("memo"),
 	createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

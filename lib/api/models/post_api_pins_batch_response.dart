@@ -15,6 +15,7 @@ class PostApiPinsBatchResponse {
     required this.latitude,
     required this.longitude,
     required this.createdAt,
+    required this.memo,
   });
   
   factory PostApiPinsBatchResponse.fromJson(Map<String, Object?> json) => _$PostApiPinsBatchResponseFromJson(json);
@@ -25,6 +26,7 @@ class PostApiPinsBatchResponse {
   final num latitude;
   final num longitude;
   final String createdAt;
+  final String? memo;
 
   Map<String, Object?> toJson() => _$PostApiPinsBatchResponseToJson(this);
 }
