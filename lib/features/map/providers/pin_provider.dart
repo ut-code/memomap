@@ -102,13 +102,13 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
     }
   }
 
-  Future<void> addPin(LatLng position) async {
+  Future<void> addPin(LatLng position, {String? memo}) async {
     final isAuthenticated = ref.read(isAuthenticatedProvider);
     final syncService = await ref.read(pinSyncServiceProvider.future);
     final mapId = _currentMapId;
 
     final previous = state.value ?? [];
-    final optimisticPin = PinData.local(position, mapId: mapId);
+    final optimisticPin = PinData.local(position, mapId: mapId, memo: memo);
     state = AsyncValue.data([optimisticPin, ...previous]);
 
     try {
@@ -116,6 +116,7 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
         position: position,
         isAuthenticated: isAuthenticated,
         mapId: mapId,
+        memo: memo,
       );
 
       state = AsyncValue.data(
@@ -161,23 +162,20 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
     state = AsyncValue.data(
       current.map((p) {
         if (p.id == id) {
-          return PinData(
-            id: p.id,
-            userId: p.userId,
-            mapId: p.mapId,
-            position: p.position,
-            createdAt: p.createdAt,
-            isLocal: p.isLocal,
-            memo: memo,
-          );
+          return p.copyWith(memo: memo);
         }
         return p;
       }).toList(),
     );
 
     try {
+      final isAuthenticated = ref.read(isAuthenticatedProvider);
       final syncService = await ref.read(pinSyncServiceProvider.future);
-      await syncService.updatePinMemo(pinId: id, memo: memo);
+      await syncService.updatePinMemo(
+        pinId: id,
+        memo: memo,
+        isAuthenticated: isAuthenticated,
+      );
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('Failed to persist memo: $e\n$st');

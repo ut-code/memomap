@@ -113,6 +113,31 @@ void main() {
       });
     });
 
+    group('pendingMemoUpdates', () {
+      test('should return empty map when no pending memo updates', () async {
+        when(() => mockStorage.getPendingMemoUpdates())
+            .thenAnswer((_) async => {});
+
+        final updates = await mockStorage.getPendingMemoUpdates();
+        expect(updates, isEmpty);
+      });
+
+      test('should store and retrieve pending memo updates', () async {
+        final updates = {'pin-1': 'Test memo', 'pin-2': null};
+
+        when(() => mockStorage.setPendingMemoUpdates(updates))
+            .thenAnswer((_) async {});
+        when(() => mockStorage.getPendingMemoUpdates())
+            .thenAnswer((_) async => updates);
+
+        await mockStorage.setPendingMemoUpdates(updates);
+        final retrieved = await mockStorage.getPendingMemoUpdates();
+
+        expect(retrieved, updates);
+        verify(() => mockStorage.setPendingMemoUpdates(updates)).called(1);
+      });
+    });
+
     group('clearAll', () {
       test('should clear all stored data', () async {
         when(() => mockStorage.clearAll())

@@ -6,10 +6,12 @@ import 'package:dio/dio.dart';
 import 'package:retrofit/retrofit.dart';
 
 import '../models/api_pins_batch_request_body.dart';
+import '../models/api_pins_id_request_body.dart';
 import '../models/api_pins_request_body.dart';
 import '../models/get_api_pins_response.dart';
 import '../models/post_api_pins_batch_response.dart';
 import '../models/post_api_pins_response.dart';
+import '../models/put_api_pins_id_response.dart';
 
 part 'pins_client.g.dart';
 
@@ -25,6 +27,13 @@ abstract class PinsClient {
   @POST('/api/pins')
   Future<PostApiPinsResponse> postApiPins({
     @Body() ApiPinsRequestBody? body,
+  });
+
+  /// Update a pin
+  @PUT('/api/pins/{id}')
+  Future<PutApiPinsIdResponse> putApiPinsById({
+    @Path('id') required String id,
+    @Body() ApiPinsIdRequestBody? body,
   });
 
   /// Delete a pin

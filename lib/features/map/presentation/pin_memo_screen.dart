@@ -80,7 +80,9 @@ class _PinMemoScreenState extends ConsumerState<PinMemoScreen> {
                                     .updatePinMemo(widget.pinId, text.isEmpty ? null : text);
                                 if (!mounted) return;
                                 setState(() => _isSaving = false);
-                                context.pop();
+                                if (context.mounted) {
+                                  context.pop();
+                                }
                               },
                         child: _isSaving
                             ? const SizedBox(
@@ -103,7 +105,9 @@ class _PinMemoScreenState extends ConsumerState<PinMemoScreen> {
                                   .updatePinMemo(widget.pinId, null);
                               if (!mounted) return;
                               setState(() => _isSaving = false);
-                              context.pop();
+                              if (context.mounted) {
+                                context.pop();
+                              }
                             },
                       child: const Text('削除'),
                     ),

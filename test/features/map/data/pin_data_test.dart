@@ -156,6 +156,76 @@ void main() {
         expect(restored.createdAt, original.createdAt);
         expect(restored.isLocal, original.isLocal);
       });
+
+      test('should preserve memo through serialization cycle', () {
+        final original = PinData(
+          id: 'memo-round-trip-id',
+          userId: 'user-1',
+          position: const LatLng(35.6762, 139.6503),
+          createdAt: DateTime.utc(2024, 7, 20, 18, 30, 0),
+          isLocal: false,
+          memo: 'Hello world memo',
+        );
+
+        final json = original.toJson();
+        final restored = PinData.fromJson(json);
+
+        expect(restored.memo, 'Hello world memo');
+      });
+    });
+
+    group('copyWith', () {
+      test('should copy with updated fields and preserve others', () {
+        final pin = PinData(
+          id: 'pin-1',
+          userId: 'user-1',
+          mapId: 'map-1',
+          position: const LatLng(35.6762, 139.6503),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: false,
+          memo: 'Original memo',
+        );
+
+        final updated = pin.copyWith(
+          mapId: 'map-2',
+          memo: 'Updated memo',
+        );
+
+        expect(updated.id, 'pin-1');
+        expect(updated.userId, 'user-1');
+        expect(updated.mapId, 'map-2');
+        expect(updated.memo, 'Updated memo');
+      });
+
+      test('should allow setting memo to null', () {
+        final pin = PinData(
+          id: 'pin-1',
+          userId: 'user-1',
+          position: const LatLng(35.6762, 139.6503),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: false,
+          memo: 'Original memo',
+        );
+
+        final updated = pin.copyWith(memo: null);
+
+        expect(updated.memo, isNull);
+      });
+
+      test('should keep original memo when memo argument is omitted', () {
+        final pin = PinData(
+          id: 'pin-1',
+          userId: 'user-1',
+          position: const LatLng(35.6762, 139.6503),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: false,
+          memo: 'Original memo',
+        );
+
+        final updated = pin.copyWith(mapId: 'map-2');
+
+        expect(updated.memo, 'Original memo');
+      });
     });
   });
 }

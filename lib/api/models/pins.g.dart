@@ -10,10 +10,12 @@ Pins _$PinsFromJson(Map<String, dynamic> json) => Pins(
   latitude: json['latitude'] as num,
   longitude: json['longitude'] as num,
   mapId: json['mapId'] as String?,
+  memo: json['memo'] as String?,
 );
 
 Map<String, dynamic> _$PinsToJson(Pins instance) => <String, dynamic>{
   'latitude': instance.latitude,
   'longitude': instance.longitude,
   'mapId': instance.mapId,
+  'memo': instance.memo,
 };
