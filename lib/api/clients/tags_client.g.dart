@@ -20,9 +20,10 @@ class _TagsClient implements TagsClient {
   final ParseErrorLogger? errorLogger;
 
   @override
-  Future<List<GetApiTagsResponse>> getApiTags() async {
+  Future<List<GetApiTagsResponse>> getApiTags({String? mapId}) async {
     final _extra = <String, dynamic>{};
-    final queryParameters = <String, dynamic>{};
+    final queryParameters = <String, dynamic>{r'mapId': mapId};
+    queryParameters.removeWhere((k, v) => v == null);
     final _headers = <String, dynamic>{};
     const Map<String, dynamic>? _data = null;
     final _options = _setStreamType<List<GetApiTagsResponse>>(

@@ -4,6 +4,7 @@ import { createTestHarness, request, seedUser, type TestHarness } from "./helper
 type TagRow = {
 	id: string;
 	userId: string;
+	mapId: string;
 	name: string;
 	color: string;
 	createdAt: string;
@@ -16,6 +17,12 @@ describe("tags API", () => {
 		h = await createTestHarness();
 		await seedUser(h, "u1");
 		await seedUser(h, "u2");
+		await h.pg.query(
+			`INSERT INTO "maps" (id, user_id, name) VALUES
+				('00000000-0000-0000-0000-000000000001', 'u1', 'Map 1'),
+				('00000000-0000-0000-0000-000000000002', 'u1', 'Map 2'),
+				('00000000-0000-0000-0000-000000000003', 'u2', 'Map 3')`,
+		);
 		h.asUser("u1");
 	});
 
@@ -26,6 +33,7 @@ describe("tags API", () => {
 	describe("POST /api/tags", () => {
 		test("creates a tag with valid body", async () => {
 			const res = await request(h, "POST", "/api/tags", {
+				mapId: "00000000-0000-0000-0000-000000000001",
 				name: "Work",
 				color: "#ff0000",
 			});
@@ -38,6 +46,7 @@ describe("tags API", () => {
 
 		test("rejects invalid color format", async () => {
 			const res = await request(h, "POST", "/api/tags", {
+				mapId: "00000000-0000-0000-0000-000000000001",
 				name: "Bad",
 				color: "red",
 			});
@@ -46,6 +55,7 @@ describe("tags API", () => {
 
 		test("rejects empty name", async () => {
 			const res = await request(h, "POST", "/api/tags", {
+				mapId: "00000000-0000-0000-0000-000000000001",
 				name: "",
 				color: "#000000",
 			});
@@ -54,11 +64,13 @@ describe("tags API", () => {
 
 		test("allows duplicate tag names per user (no unique constraint)", async () => {
 			const r1 = await request(h, "POST", "/api/tags", {
+				mapId: "00000000-0000-0000-0000-000000000001",
 				name: "Same",
 				color: "#111111",
 			});
 			expect(r1.status).toBe(201);
 			const r2 = await request(h, "POST", "/api/tags", {
+				mapId: "00000000-0000-0000-0000-000000000001",
 				name: "Same",
 				color: "#222222",
 			});
@@ -69,6 +81,7 @@ describe("tags API", () => {
 			const h2 = await createTestHarness();
 			try {
 				const res = await request(h2, "POST", "/api/tags", {
+					mapId: "00000000-0000-0000-0000-000000000001",
 					name: "X",
 					color: "#000000",
 				});
@@ -81,12 +94,24 @@ describe("tags API", () => {
 
 	describe("GET /api/tags", () => {
 		test("returns tags only for the current user", async () => {
-			await request(h, "POST", "/api/tags", { name: "A", color: "#aaaaaa" });
+			await request(h, "POST", "/api/tags", {
+				mapId: "00000000-0000-0000-0000-000000000001",
+				name: "A",
+				color: "#aaaaaa",
+			});
 			h.asUser("u2");
-			await request(h, "POST", "/api/tags", { name: "B", color: "#bbbbbb" });
+			await request(h, "POST", "/api/tags", {
+				mapId: "00000000-0000-0000-0000-000000000003",
+				name: "B",
+				color: "#bbbbbb",
+			});
 
 			h.asUser("u1");
-			const res = await request(h, "GET", "/api/tags");
+			const res = await request(
+				h,
+				"GET",
+				"/api/tags?mapId=00000000-0000-0000-0000-000000000001",
+			);
 			expect(res.status).toBe(200);
 			const body = (await res.json()) as TagRow[];
 			expect(body.length).toBe(1);
@@ -94,10 +119,36 @@ describe("tags API", () => {
 		});
 
 		test("returns empty array when user has no tags", async () => {
-			const res = await request(h, "GET", "/api/tags");
+			const res = await request(
+				h,
+				"GET",
+				"/api/tags?mapId=00000000-0000-0000-0000-000000000001",
+			);
 			expect(res.status).toBe(200);
 			const body = (await res.json()) as TagRow[];
 			expect(body).toEqual([]);
+		});
+
+		test("returns only tags belonging to the requested map", async () => {
+			await request(h, "POST", "/api/tags", {
+				mapId: "00000000-0000-0000-0000-000000000001",
+				name: "Map 1 tag",
+				color: "#aaaaaa",
+			});
+			await request(h, "POST", "/api/tags", {
+				mapId: "00000000-0000-0000-0000-000000000002",
+				name: "Map 2 tag",
+				color: "#bbbbbb",
+			});
+
+			const res = await request(
+				h,
+				"GET",
+				"/api/tags?mapId=00000000-0000-0000-0000-000000000002",
+			);
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as TagRow[];
+			expect(body.map((tag) => tag.name)).toEqual(["Map 2 tag"]);
 		});
 	});
 
@@ -105,6 +156,7 @@ describe("tags API", () => {
 		test("updates name only", async () => {
 			const created = await (
 				await request(h, "POST", "/api/tags", {
+					mapId: "00000000-0000-0000-0000-000000000001",
 					name: "Old",
 					color: "#abcdef",
 				})
@@ -129,6 +181,7 @@ describe("tags API", () => {
 			h.asUser("u2");
 			const other = await (
 				await request(h, "POST", "/api/tags", {
+					mapId: "00000000-0000-0000-0000-000000000003",
 					name: "Other",
 					color: "#000000",
 				})
@@ -145,6 +198,7 @@ describe("tags API", () => {
 		test("deletes the tag", async () => {
 			const created = await (
 				await request(h, "POST", "/api/tags", {
+					mapId: "00000000-0000-0000-0000-000000000001",
 					name: "Doomed",
 					color: "#deadbe",
 				})
@@ -152,13 +206,20 @@ describe("tags API", () => {
 			const res = await request(h, "DELETE", `/api/tags/${created.id}`);
 			expect(res.status).toBe(204);
 
-			const list = (await (await request(h, "GET", "/api/tags")).json()) as TagRow[];
+			const list = (await (
+				await request(
+					h,
+					"GET",
+					"/api/tags?mapId=00000000-0000-0000-0000-000000000001",
+				)
+			).json()) as TagRow[];
 			expect(list.length).toBe(0);
 		});
 
 		test("cascade-deletes pin_tags rows", async () => {
 			const tag = await (
 				await request(h, "POST", "/api/tags", {
+					mapId: "00000000-0000-0000-0000-000000000001",
 					name: "T",
 					color: "#000000",
 				})

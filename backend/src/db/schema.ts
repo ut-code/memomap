@@ -117,6 +117,9 @@ export const tags = pgTable("tags", {
 	userId: text("user_id")
 		.notNull()
 		.references(() => user.id, { onDelete: "cascade" }),
+	mapId: uuid("map_id")
+		.notNull()
+		.references(() => maps.id, { onDelete: "cascade" }),
 	name: text("name").notNull(),
 	color: text("color").notNull(),
 	createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -125,7 +128,11 @@ export const tags = pgTable("tags", {
 export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 
-export const tagsRelations = relations(tags, ({ many }) => ({
+export const tagsRelations = relations(tags, ({ one, many }) => ({
+	map: one(maps, {
+		fields: [tags.mapId],
+		references: [maps.id],
+	}),
 	pinTags: many(pinTags),
 }));
 

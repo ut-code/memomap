@@ -17,9 +17,11 @@ part 'tags_client.g.dart';
 abstract class TagsClient {
   factory TagsClient(Dio dio, {String? baseUrl}) = _TagsClient;
 
-  /// Get all tags for current user
+  /// Get all tags for a map
   @GET('/api/tags')
-  Future<List<GetApiTagsResponse>> getApiTags();
+  Future<List<GetApiTagsResponse>> getApiTags({
+    @Query('mapId') String? mapId,
+  });
 
   /// Create a new tag
   @POST('/api/tags')

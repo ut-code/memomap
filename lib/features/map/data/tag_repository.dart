@@ -32,51 +32,56 @@ int hexToColorInt(String hex) {
 TagData _createTagData({
   required String id,
   required String userId,
+  required String? mapId,
   required String name,
   required String color,
   required String createdAt,
-}) =>
-    TagData(
-      id: id,
-      userId: userId,
-      name: name,
-      color: hexToColorInt(color),
-      createdAt: DateTime.parse(createdAt),
-    );
+}) => TagData(
+  id: id,
+  userId: userId,
+  mapId: mapId,
+  name: name,
+  color: hexToColorInt(color),
+  createdAt: DateTime.parse(createdAt),
+);
 
 extension GetApiTagsResponseExt on GetApiTagsResponse {
   TagData toTagData() => _createTagData(
-        id: id,
-        userId: userId,
-        name: name,
-        color: color,
-        createdAt: createdAt,
-      );
+    id: id,
+    userId: userId,
+    mapId: mapId,
+    name: name,
+    color: color,
+    createdAt: createdAt,
+  );
 }
 
 extension PostApiTagsResponseExt on PostApiTagsResponse {
   TagData toTagData() => _createTagData(
-        id: id,
-        userId: userId,
-        name: name,
-        color: color,
-        createdAt: createdAt,
-      );
+    id: id,
+    userId: userId,
+    mapId: mapId,
+    name: name,
+    color: color,
+    createdAt: createdAt,
+  );
 }
 
 extension PutApiTagsIdResponseExt on PutApiTagsIdResponse {
   TagData toTagData() => _createTagData(
-        id: id,
-        userId: userId,
-        name: name,
-        color: color,
-        createdAt: createdAt,
-      );
+    id: id,
+    userId: userId,
+    mapId: mapId,
+    name: name,
+    color: color,
+    createdAt: createdAt,
+  );
 }
 
 class TagData {
   final String id;
   final String? userId;
+  final String? mapId;
   final String name;
   final int color; // ARGB int
   final DateTime createdAt;
@@ -85,16 +90,22 @@ class TagData {
   TagData({
     required this.id,
     required this.userId,
+    this.mapId,
     required this.name,
     required this.color,
     required this.createdAt,
     this.isLocal = false,
   });
 
-  factory TagData.local({required String name, required int color}) {
+  factory TagData.local({
+    String? mapId,
+    required String name,
+    required int color,
+  }) {
     return TagData(
       id: const Uuid().v4(),
       userId: null,
+      mapId: mapId,
       name: name,
       color: color,
       createdAt: DateTime.now(),
@@ -106,6 +117,7 @@ class TagData {
     return TagData(
       id: json['id'] as String,
       userId: json['userId'] as String?,
+      mapId: json['mapId'] as String?,
       name: json['name'] as String,
       color: json['color'] as int,
       createdAt: DateTime.parse(json['createdAt'] as String),
@@ -117,6 +129,7 @@ class TagData {
     return {
       'id': id,
       'userId': userId,
+      'mapId': mapId,
       'name': name,
       'color': color,
       'createdAt': createdAt.toUtc().toIso8601String(),
@@ -127,6 +140,7 @@ class TagData {
   TagData copyWith({
     String? id,
     String? userId,
+    String? mapId,
     String? name,
     int? color,
     DateTime? createdAt,
@@ -135,6 +149,7 @@ class TagData {
     return TagData(
       id: id ?? this.id,
       userId: userId ?? this.userId,
+      mapId: mapId ?? this.mapId,
       name: name ?? this.name,
       color: color ?? this.color,
       createdAt: createdAt ?? this.createdAt,
@@ -144,8 +159,12 @@ class TagData {
 }
 
 abstract interface class TagRepositoryBase {
-  Future<List<TagData>> getTags();
-  Future<TagData?> createTag({required String name, required int color});
+  Future<List<TagData>> getTags({String? mapId});
+  Future<TagData?> createTag({
+    String? mapId,
+    required String name,
+    required int color,
+  });
   Future<TagData?> updateTag(String id, {String? name, int? color});
   Future<void> deleteTag(String id);
 
@@ -176,19 +195,29 @@ class TagRepository implements TagRepositoryBase {
   }
 
   @override
-  Future<List<TagData>> getTags() async {
+  Future<List<TagData>> getTags({String? mapId}) async {
     if (!await _isAuthenticated()) return [];
 
-    final response = await _api.tags.getApiTags();
+    final response = mapId == null
+        ? await _api.tags.getApiTags()
+        : await _api.tags.getApiTags(mapId: mapId);
     return response.map((r) => r.toTagData()).toList();
   }
 
   @override
-  Future<TagData?> createTag({required String name, required int color}) async {
+  Future<TagData?> createTag({
+    String? mapId,
+    required String name,
+    required int color,
+  }) async {
     if (!await _isAuthenticated()) return null;
 
     final response = await _api.tags.postApiTags(
-      body: ApiTagsRequestBody(name: name, color: colorIntToHex(color)),
+      body: ApiTagsRequestBody(
+        mapId: mapId,
+        name: name,
+        color: colorIntToHex(color),
+      ),
     );
     return response.toTagData();
   }
@@ -224,7 +253,10 @@ class TagRepository implements TagRepositoryBase {
     // index was dropped.
     Set<String> taken;
     try {
-      taken = (await getTags()).map((t) => t.name).toSet();
+      final existing = localTags.first.mapId == null
+          ? await getTags()
+          : await getTags(mapId: localTags.first.mapId);
+      taken = existing.map((t) => t.name).toSet();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to fetch existing tags for rename: $e');
@@ -237,7 +269,11 @@ class TagRepository implements TagRepositoryBase {
       final name = _uniqueName(tag.name, taken);
       taken.add(name);
       try {
-        final created = await createTag(name: name, color: tag.color);
+        final created = await createTag(
+          mapId: tag.mapId,
+          name: name,
+          color: tag.color,
+        );
         if (created != null) {
           idMapping[tag.id] = created.id;
         }

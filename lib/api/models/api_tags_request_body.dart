@@ -11,10 +11,12 @@ class ApiTagsRequestBody {
   const ApiTagsRequestBody({
     required this.name,
     required this.color,
+    this.mapId,
   });
   
   factory ApiTagsRequestBody.fromJson(Map<String, Object?> json) => _$ApiTagsRequestBodyFromJson(json);
   
+  final String? mapId;
   final String name;
   final String color;
 

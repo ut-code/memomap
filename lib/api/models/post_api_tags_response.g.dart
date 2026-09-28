@@ -13,6 +13,7 @@ PostApiTagsResponse _$PostApiTagsResponseFromJson(Map<String, dynamic> json) =>
       name: json['name'] as String,
       color: json['color'] as String,
       createdAt: json['createdAt'] as String,
+      mapId: json['mapId'] as String?,
     );
 
 Map<String, dynamic> _$PostApiTagsResponseToJson(
@@ -20,6 +21,7 @@ Map<String, dynamic> _$PostApiTagsResponseToJson(
 ) => <String, dynamic>{
   'id': instance.id,
   'userId': instance.userId,
+  'mapId': instance.mapId,
   'name': instance.name,
   'color': instance.color,
   'createdAt': instance.createdAt,

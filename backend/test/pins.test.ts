@@ -17,7 +17,9 @@ async function createMap(h: TestHarness, name = "M"): Promise<string> {
 }
 
 async function createTag(h: TestHarness, name = "T"): Promise<string> {
+	const mapId = await createMap(h, `Tag map ${name}`);
 	const r = await request(h, "POST", "/api/tags", {
+		mapId,
 		name,
 		color: "#000000",
 	});
@@ -177,6 +179,30 @@ describe("pins API", () => {
 			h.asUser("u1");
 			const res = await request(h, "PATCH", `/api/pins/${pin.id}`, {
 				tagIds: [otherTag],
+			});
+			expect(res.status).toBe(400);
+		});
+
+		test("rejects tagIds belonging to another map", async () => {
+			const pinMap = await createMap(h, "Pin map");
+			const otherMap = await createMap(h, "Other map");
+			const pin = await (
+				await request(h, "POST", "/api/pins", {
+					latitude: 1,
+					longitude: 2,
+					mapId: pinMap,
+				})
+			).json();
+			const tag = await (
+				await request(h, "POST", "/api/tags", {
+					mapId: otherMap,
+					name: "Other map tag",
+					color: "#000000",
+				})
+			).json();
+
+			const res = await request(h, "PATCH", `/api/pins/${pin.id}`, {
+				tagIds: [tag.id],
 			});
 			expect(res.status).toBe(400);
 		});

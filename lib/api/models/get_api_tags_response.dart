@@ -14,12 +14,14 @@ class GetApiTagsResponse {
     required this.name,
     required this.color,
     required this.createdAt,
+    this.mapId,
   });
   
   factory GetApiTagsResponse.fromJson(Map<String, Object?> json) => _$GetApiTagsResponseFromJson(json);
   
   final String id;
   final String userId;
+  final String? mapId;
   final String name;
   final String color;
   final String createdAt;

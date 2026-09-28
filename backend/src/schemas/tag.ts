@@ -9,6 +9,7 @@ export const TagNameSchema = v.pipe(
 );
 
 export const CreateTagSchema = v.object({
+	mapId: v.optional(v.pipe(v.string(), v.uuid())),
 	name: TagNameSchema,
 	color: ColorHexSchema,
 });
@@ -21,12 +22,17 @@ export const UpdateTagSchema = v.object({
 export const TagSchema = v.object({
 	id: v.string(),
 	userId: v.string(),
+	mapId: v.optional(v.string()),
 	name: v.string(),
 	color: v.string(),
 	createdAt: v.string(),
 });
 
 export const TagsArraySchema = v.array(TagSchema);
+
+export const GetTagsQuerySchema = v.object({
+	mapId: v.optional(v.pipe(v.string(), v.uuid())),
+});
 
 export const UpdatePinSchema = v.object({
 	tagIds: v.optional(v.array(v.string())),

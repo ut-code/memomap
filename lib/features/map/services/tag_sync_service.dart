@@ -22,13 +22,18 @@ class TagSyncService {
     await storage.setLastUserId(currentUserId);
   }
 
-  Future<List<TagData>> getAllTags() async {
+  Future<List<TagData>> getAllTags([String? mapId]) async {
     final cached = await storage.getCachedTags();
     final local = await storage.getLocalTags();
-    return [...cached, ...local];
+    if (mapId == null) return [...cached, ...local];
+    return [
+      ...cached.where((tag) => tag.mapId == mapId),
+      ...local.where((tag) => tag.mapId == mapId),
+    ];
   }
 
   Future<TagData> createTag({
+    String? mapId,
     required String name,
     required int color,
     required bool isAuthenticated,
@@ -37,7 +42,13 @@ class TagSyncService {
 
     if (isAuthenticated && isOnline) {
       try {
-        final serverTag = await repository.createTag(name: name, color: color);
+        final serverTag = mapId == null
+            ? await repository.createTag(name: name, color: color)
+            : await repository.createTag(
+                mapId: mapId,
+                name: name,
+                color: color,
+              );
         if (serverTag != null) {
           final cached = await storage.getCachedTags();
           await storage.setCachedTags([serverTag, ...cached]);
@@ -51,7 +62,7 @@ class TagSyncService {
       }
     }
 
-    final localTag = TagData.local(name: name, color: color);
+    final localTag = TagData.local(mapId: mapId, name: name, color: color);
     final local = await storage.getLocalTags();
     await storage.setLocalTags([localTag, ...local]);
     return localTag;
@@ -136,26 +147,41 @@ class TagSyncService {
   }
 
   /// Syncs with server. Returns a mapping of old local tag IDs to new server IDs.
-  Future<Map<String, String>> syncWithServer() async {
+  Future<Map<String, String>> syncWithServer([String? mapId]) async {
     final isOnline = await networkChecker.isOnline;
     if (!isOnline) return {};
 
     await _processPendingDeletions();
 
-    final localTags = await storage.getLocalTags();
+    final allLocalTags = await storage.getLocalTags();
+    final localTags = mapId == null
+        ? allLocalTags
+        : allLocalTags.where((tag) => tag.mapId == mapId).toList();
     var idMapping = <String, String>{};
     if (localTags.isNotEmpty) {
       idMapping = await repository.uploadLocalTags(localTags);
-      final remaining =
-          localTags.where((t) => !idMapping.containsKey(t.id)).toList();
+      final remaining = localTags
+          .where((t) => !idMapping.containsKey(t.id))
+          .toList();
       if (remaining.length != localTags.length) {
-        await storage.setLocalTags(remaining);
+        final uploadedIds = idMapping.keys.toSet();
+        await storage.setLocalTags(
+          allLocalTags.where((tag) => !uploadedIds.contains(tag.id)).toList(),
+        );
       }
     }
 
     try {
-      final serverTags = await repository.getTags();
-      await storage.setCachedTags(serverTags);
+      final serverTags = mapId == null
+          ? await repository.getTags()
+          : await repository.getTags(mapId: mapId);
+      if (mapId == null) {
+        await storage.setCachedTags(serverTags);
+      } else {
+        final cached = await storage.getCachedTags();
+        final kept = cached.where((tag) => tag.mapId != mapId).toList();
+        await storage.setCachedTags([...serverTags, ...kept]);
+      }
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to refresh tags from server: $e');

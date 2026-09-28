@@ -7,6 +7,7 @@ import 'package:memomap/features/map/data/local_tag_storage.dart';
 import 'package:memomap/features/map/data/tag_repository.dart';
 import 'package:memomap/features/map/providers/pin_provider.dart'
     show networkCheckerProvider, pinsProvider;
+import 'package:memomap/features/map/providers/current_map_provider.dart';
 import 'package:memomap/features/map/services/tag_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -56,6 +57,12 @@ class TagsNotifier extends AsyncNotifier<List<TagData>> {
     }
 
     try {
+      ref.listen(currentMapIdProvider, (prev, next) {
+        if (prev != next) ref.invalidateSelf();
+      });
+      final mapId = ref.watch(currentMapIdProvider);
+      if (mapId == null) return [];
+
       ref.listen(sessionProvider, (prev, next) {
         final prevUserId = prev?.valueOrNull?.user.id;
         final nextUserId = next.valueOrNull?.user.id;
@@ -72,7 +79,7 @@ class TagsNotifier extends AsyncNotifier<List<TagData>> {
       await syncService.clearIfUserChanged(currentUserId);
 
       // Optimistic display: show cached tags immediately while sync runs.
-      final cached = await syncService.getAllTags();
+      final cached = await syncService.getAllTags(mapId);
       state = AsyncValue.data(cached);
 
       if (isAuthenticated) {
@@ -84,14 +91,14 @@ class TagsNotifier extends AsyncNotifier<List<TagData>> {
         // UI populated during the wait.
         Map<String, String> idMapping = {};
         try {
-          idMapping = await syncService.syncWithServer();
+          idMapping = await syncService.syncWithServer(mapId);
         } catch (e, st) {
           if (kDebugMode) {
             debugPrint('Tag sync failed: $e\n$st');
           }
         }
         ref.read(tagIdMappingProvider.notifier).state = idMapping;
-        final fresh = await syncService.getAllTags();
+        final fresh = await syncService.getAllTags(mapId);
         state = AsyncValue.data(fresh);
         return fresh;
       }
@@ -105,9 +112,12 @@ class TagsNotifier extends AsyncNotifier<List<TagData>> {
   Future<TagData?> createTag({required String name, required int color}) async {
     final isAuthenticated = ref.read(isAuthenticatedProvider);
     final syncService = await ref.read(tagSyncServiceProvider.future);
+    final mapId = ref.read(currentMapIdProvider);
+    if (mapId == null) return null;
 
     try {
       final created = await syncService.createTag(
+        mapId: mapId,
         name: name,
         color: color,
         isAuthenticated: isAuthenticated,
@@ -135,7 +145,9 @@ class TagsNotifier extends AsyncNotifier<List<TagData>> {
       );
       if (updated != null) {
         state = AsyncValue.data(
-          (state.value ?? []).map((t) => t.id == updated.id ? updated : t).toList(),
+          (state.value ?? [])
+              .map((t) => t.id == updated.id ? updated : t)
+              .toList(),
         );
       }
       return updated;

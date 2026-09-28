@@ -1,8 +1,8 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { Hono } from "hono";
 import type { Context } from "hono";
+import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
 import {
@@ -37,6 +37,7 @@ import {
 } from "./schemas/pin";
 import {
 	CreateTagSchema,
+	GetTagsQuerySchema,
 	TagSchema,
 	TagsArraySchema,
 	UpdatePinSchema,
@@ -245,7 +246,7 @@ app.get(
 		const userId = c.get("userId");
 
 		try {
-			const data = await withDb(c,async (db) => {
+			const data = await withDb(c, async (db) => {
 				const pinRows = await db
 					.select()
 					.from(pins)
@@ -317,12 +318,12 @@ app.post(
 		const userId = c.get("userId");
 		const body = c.req.valid("json");
 
-		if (!(await validateMapOwnership(c,body.mapId, userId))) {
+		if (!(await validateMapOwnership(c, body.mapId, userId))) {
 			return c.json({ error: "Map not found" }, 404);
 		}
 
 		try {
-			const [data] = await withDb(c,(db) =>
+			const [data] = await withDb(c, (db) =>
 				db
 					.insert(pins)
 					.values({
@@ -375,7 +376,7 @@ app.delete(
 		}
 
 		try {
-			await withDb(c,(db) =>
+			await withDb(c, (db) =>
 				db.delete(pins).where(and(eq(pins.id, pinId), eq(pins.userId, userId))),
 			);
 
@@ -419,7 +420,7 @@ app.post(
 
 		const mapIds = [...new Set(body.pins.map((p) => p.mapId).filter(Boolean))];
 		for (const mapId of mapIds) {
-			if (!(await validateMapOwnership(c,mapId, userId))) {
+			if (!(await validateMapOwnership(c, mapId, userId))) {
 				return c.json({ error: "Map not found" }, 404);
 			}
 		}
@@ -432,7 +433,7 @@ app.post(
 		}));
 
 		try {
-			const data = await withDb(c,(db) =>
+			const data = await withDb(c, (db) =>
 				db.insert(pins).values(pinsToInsert).returning(),
 			);
 
@@ -487,7 +488,7 @@ app.patch(
 		}
 
 		try {
-			const result = await withDb(c,(db) =>
+			const result = await withDb(c, (db) =>
 				db.transaction(async (tx) => {
 					const [owned] = await tx
 						.select({ id: pins.id })
@@ -498,12 +499,32 @@ app.patch(
 
 					if (body.tagIds !== undefined) {
 						if (body.tagIds.length > 0) {
-							const valid = await tx
-								.select({ id: tags.id })
-								.from(tags)
-								.where(
-									and(eq(tags.userId, userId), inArray(tags.id, body.tagIds)),
-								);
+							const [pin] = await tx
+								.select({ mapId: pins.mapId })
+								.from(pins)
+								.where(eq(pins.id, pinId))
+								.limit(1);
+							const valid =
+								pin?.mapId === null
+									? await tx
+											.select({ id: tags.id })
+											.from(tags)
+											.where(
+												and(
+													eq(tags.userId, userId),
+													inArray(tags.id, body.tagIds),
+												),
+											)
+									: await tx
+											.select({ id: tags.id })
+											.from(tags)
+											.where(
+												and(
+													eq(tags.userId, userId),
+													eq(tags.mapId, pin?.mapId as string),
+													inArray(tags.id, body.tagIds),
+												),
+											);
 							if (valid.length !== new Set(body.tagIds).size) {
 								return "invalid_tag" as const;
 							}
@@ -548,7 +569,15 @@ app.get(
 	"/api/tags",
 	describeRoute({
 		tags: ["tags"],
-		summary: "Get all tags for current user",
+		summary: "Get all tags for a map",
+		parameters: [
+			{
+				in: "query",
+				name: "mapId",
+				required: true,
+				schema: { type: "string", format: "uuid" },
+			},
+		],
 		responses: {
 			200: {
 				description: "List of tags",
@@ -565,15 +594,18 @@ app.get(
 		},
 	}),
 	authMiddleware,
+	validator("query", GetTagsQuerySchema),
 	async (c) => {
 		const userId = c.get("userId");
+		const mapId = c.req.valid("query").mapId;
+		if (!mapId) return c.json({ error: "Invalid map ID" }, 400);
 
 		try {
-			const data = await withDb(c,(db) =>
+			const data = await withDb(c, (db) =>
 				db
 					.select()
 					.from(tags)
-					.where(eq(tags.userId, userId))
+					.where(and(eq(tags.userId, userId), eq(tags.mapId, mapId)))
 					.orderBy(desc(tags.createdAt)),
 			);
 			return c.json(data);
@@ -615,11 +647,17 @@ app.post(
 		const body = c.req.valid("json");
 
 		try {
-			const [data] = await withDb(c,(db) =>
+			if (!body.mapId) return c.json({ error: "Invalid map ID" }, 400);
+			const mapId = body.mapId;
+			const ownsMap = await validateMapOwnership(c, mapId, userId);
+			if (!ownsMap) return c.json({ error: "Map not found" }, 404);
+
+			const [data] = await withDb(c, (db) =>
 				db
 					.insert(tags)
 					.values({
 						userId,
+						mapId,
 						name: body.name,
 						color: body.color,
 					})
@@ -681,7 +719,7 @@ app.put(
 				return c.json({ error: "No fields to update" }, 400);
 			}
 
-			const [data] = await withDb(c,(db) =>
+			const [data] = await withDb(c, (db) =>
 				db
 					.update(tags)
 					.set(updateData)
@@ -733,7 +771,7 @@ app.delete(
 		}
 
 		try {
-			await withDb(c,(db) =>
+			await withDb(c, (db) =>
 				db.delete(tags).where(and(eq(tags.id, tagId), eq(tags.userId, userId))),
 			);
 			return c.body(null, 204);
@@ -773,7 +811,7 @@ app.get(
 		const userId = c.get("userId");
 
 		try {
-			const data = await withDb(c,(db) =>
+			const data = await withDb(c, (db) =>
 				db
 					.select()
 					.from(drawings)
@@ -819,12 +857,12 @@ app.post(
 		const userId = c.get("userId");
 		const body = c.req.valid("json");
 
-		if (!(await validateMapOwnership(c,body.mapId, userId))) {
+		if (!(await validateMapOwnership(c, body.mapId, userId))) {
 			return c.json({ error: "Map not found" }, 404);
 		}
 
 		try {
-			const [data] = await withDb(c,(db) =>
+			const [data] = await withDb(c, (db) =>
 				db
 					.insert(drawings)
 					.values({
@@ -878,7 +916,7 @@ app.delete(
 		}
 
 		try {
-			await withDb(c,(db) =>
+			await withDb(c, (db) =>
 				db
 					.delete(drawings)
 					.where(and(eq(drawings.id, drawingId), eq(drawings.userId, userId))),
@@ -928,7 +966,7 @@ app.post(
 			...new Set(body.drawings.map((d) => d.mapId).filter(Boolean)),
 		];
 		for (const mapId of mapIds) {
-			if (!(await validateMapOwnership(c,mapId, userId))) {
+			if (!(await validateMapOwnership(c, mapId, userId))) {
 				return c.json({ error: "Map not found" }, 404);
 			}
 		}
@@ -942,7 +980,7 @@ app.post(
 		}));
 
 		try {
-			const data = await withDb(c,(db) =>
+			const data = await withDb(c, (db) =>
 				db.insert(drawings).values(drawingsToInsert).returning(),
 			);
 
@@ -981,7 +1019,7 @@ app.get(
 		const userId = c.get("userId");
 
 		try {
-			const data = await withDb(c,(db) =>
+			const data = await withDb(c, (db) =>
 				db
 					.select()
 					.from(maps)
@@ -1028,7 +1066,7 @@ app.post(
 		const body = c.req.valid("json");
 
 		try {
-			const [data] = await withDb(c,(db) =>
+			const [data] = await withDb(c, (db) =>
 				db
 					.insert(maps)
 					.values({
@@ -1096,7 +1134,7 @@ app.put(
 				return c.json({ error: "No fields to update" }, 400);
 			}
 
-			const [data] = await withDb(c,(db) =>
+			const [data] = await withDb(c, (db) =>
 				db
 					.update(maps)
 					.set(updateData)
@@ -1149,7 +1187,7 @@ app.delete(
 		}
 
 		try {
-			await withDb(c,(db) =>
+			await withDb(c, (db) =>
 				db.delete(maps).where(and(eq(maps.id, mapId), eq(maps.userId, userId))),
 			);
 
