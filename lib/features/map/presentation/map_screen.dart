@@ -12,6 +12,7 @@ import 'package:memomap/features/map/models/drawing_path.dart';
 import 'package:memomap/features/map/presentation/widgets/controls.dart';
 import 'package:memomap/features/map/presentation/widgets/map_search_bar.dart';
 import 'package:memomap/features/map/presentation/widgets/pin_list.dart';
+import 'package:memomap/features/map/presentation/widgets/pin_name_editor.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:flutter/services.dart';
 import 'dart:math' as math;
@@ -201,12 +202,8 @@ class _MapScreenState extends ConsumerState<MapScreen> {
         _activePinScreenPos!.dy,
       ),
       items: [
-        PopupMenuItem(
-          value: "memo",
-          child: Text(
-            "メモ",
-          ),
-        ),
+        PopupMenuItem(value: "memo", child: Text("メモ")),
+        PopupMenuItem(value: "name", child: Text("名前を編集")),
         PopupMenuItem(
           value: "delete",
           child: Text(
@@ -230,6 +227,15 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     } else if (selected == "memo") {
       // navigate to memo editor
       context.push('/pin/${pin.id}/memo');
+    } else if (selected == "name") {
+      final currentPin =
+          ref
+              .read(pinsProvider)
+              .value
+              ?.where((current) => current.id == pin.id)
+              .firstOrNull ??
+          pin;
+      await showPinNameEditor(context, ref, currentPin);
     }
   }
 

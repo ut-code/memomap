@@ -41,6 +41,7 @@ void main() {
         expect(json['longitude'], 151.2093);
         expect(json['createdAt'], '2024-03-20T15:45:30.000Z');
         expect(json['isLocal'], true);
+        expect(json['name'], 'ピン');
       });
     });
 
@@ -83,6 +84,7 @@ void main() {
         expect(pin.position.longitude, 151.2093);
         expect(pin.createdAt, DateTime.utc(2024, 3, 20, 15, 45, 30));
         expect(pin.isLocal, true);
+        expect(pin.name, 'ピン');
       });
 
       test('should handle missing isLocal field (defaults to false)', () {

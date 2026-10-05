@@ -114,6 +114,8 @@ class PinSyncService {
           position: pin.position,
           createdAt: pin.createdAt,
           isLocal: pin.isLocal,
+          name: pin.name,
+          memo: pin.memo,
         );
       }
       return pin;
@@ -166,8 +168,25 @@ class PinSyncService {
 
   Future<void> _refreshCacheFromServer() async {
     try {
+      final cachedPins = await storage.getCachedPins();
+      final cachedNames = {for (final pin in cachedPins) pin.id: pin.name};
       final serverPins = await repository.getPins();
-      await storage.setCachedPins(serverPins);
+      await storage.setCachedPins(
+        serverPins
+            .map(
+              (pin) => PinData(
+                id: pin.id,
+                userId: pin.userId,
+                mapId: pin.mapId,
+                position: pin.position,
+                createdAt: pin.createdAt,
+                isLocal: pin.isLocal,
+                name: cachedNames[pin.id] ?? pin.name,
+                memo: pin.memo,
+              ),
+            )
+            .toList(),
+      );
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to refresh cache from server: $e');
@@ -178,7 +197,10 @@ class PinSyncService {
   /// Update memo for a pin locally. This updates either local pins or cached pins
   /// depending on where the pin exists. This is stored only on the client side
   /// (no server update is attempted here).
-  Future<void> updatePinMemo({required String pinId, required String? memo}) async {
+  Future<void> updatePinMemo({
+    required String pinId,
+    required String? memo,
+  }) async {
     final localPins = await storage.getLocalPins();
     final cachedPins = await storage.getCachedPins();
 
@@ -194,6 +216,7 @@ class PinSyncService {
           position: pin.position,
           createdAt: pin.createdAt,
           isLocal: pin.isLocal,
+          name: pin.name,
           memo: memo,
         );
       }
@@ -215,10 +238,59 @@ class PinSyncService {
           position: pin.position,
           createdAt: pin.createdAt,
           isLocal: pin.isLocal,
+          name: pin.name,
           memo: memo,
         );
       }
       return pin;
+    }).toList();
+
+    if (updated) {
+      await storage.setCachedPins(newCached);
+    }
+  }
+
+  Future<void> updatePinName({
+    required String pinId,
+    required String name,
+  }) async {
+    final localPins = await storage.getLocalPins();
+    final cachedPins = await storage.getCachedPins();
+
+    var updated = false;
+    final newLocal = localPins.map((pin) {
+      if (pin.id != pinId) return pin;
+      updated = true;
+      return PinData(
+        id: pin.id,
+        userId: pin.userId,
+        mapId: pin.mapId,
+        position: pin.position,
+        createdAt: pin.createdAt,
+        isLocal: pin.isLocal,
+        name: name,
+        memo: pin.memo,
+      );
+    }).toList();
+
+    if (updated) {
+      await storage.setLocalPins(newLocal);
+      return;
+    }
+
+    final newCached = cachedPins.map((pin) {
+      if (pin.id != pinId) return pin;
+      updated = true;
+      return PinData(
+        id: pin.id,
+        userId: pin.userId,
+        mapId: pin.mapId,
+        position: pin.position,
+        createdAt: pin.createdAt,
+        isLocal: pin.isLocal,
+        name: name,
+        memo: pin.memo,
+      );
     }).toList();
 
     if (updated) {

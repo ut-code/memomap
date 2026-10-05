@@ -52,10 +52,12 @@ void main() {
           ),
         ];
 
-        when(() => mockStorage.getCachedPins())
-            .thenAnswer((_) async => cachedPins);
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => localPins);
+        when(
+          () => mockStorage.getCachedPins(),
+        ).thenAnswer((_) async => cachedPins);
+        when(
+          () => mockStorage.getLocalPins(),
+        ).thenAnswer((_) async => localPins);
 
         final pins = await syncService.getAllPins();
 
@@ -65,10 +67,8 @@ void main() {
       });
 
       test('should return empty list when no pins exist', () async {
-        when(() => mockStorage.getCachedPins())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => []);
+        when(() => mockStorage.getCachedPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
 
         final pins = await syncService.getAllPins();
 
@@ -87,14 +87,12 @@ void main() {
           isLocal: false,
         );
 
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => true);
-        when(() => mockRepository.addPin(position))
-            .thenAnswer((_) async => serverPin);
-        when(() => mockStorage.getCachedPins())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.setCachedPins(any()))
-            .thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(
+          () => mockRepository.addPin(position),
+        ).thenAnswer((_) async => serverPin);
+        when(() => mockStorage.getCachedPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
 
         final result = await syncService.addPin(
           position: position,
@@ -109,12 +107,9 @@ void main() {
       test('should add to local storage when offline', () async {
         final position = const LatLng(35.6762, 139.6503);
 
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => false);
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.setLocalPins(any()))
-            .thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => false);
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
 
         final result = await syncService.addPin(
           position: position,
@@ -129,10 +124,8 @@ void main() {
       test('should add to local storage when not authenticated', () async {
         final position = const LatLng(35.6762, 139.6503);
 
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.setLocalPins(any()))
-            .thenAnswer((_) async {});
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
 
         final result = await syncService.addPin(
           position: position,
@@ -147,14 +140,12 @@ void main() {
       test('should fallback to local when server fails', () async {
         final position = const LatLng(35.6762, 139.6503);
 
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => true);
-        when(() => mockRepository.addPin(position))
-            .thenThrow(Exception('Server error'));
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.setLocalPins(any()))
-            .thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(
+          () => mockRepository.addPin(position),
+        ).thenThrow(Exception('Server error'));
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
 
         final result = await syncService.addPin(
           position: position,
@@ -175,19 +166,14 @@ void main() {
           isLocal: false,
         );
 
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => true);
-        when(() => mockRepository.deletePin('server-pin'))
-            .thenAnswer((_) async {});
-        when(() => mockStorage.getCachedPins())
-            .thenAnswer((_) async => [pin]);
-        when(() => mockStorage.setCachedPins(any()))
-            .thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(
+          () => mockRepository.deletePin('server-pin'),
+        ).thenAnswer((_) async {});
+        when(() => mockStorage.getCachedPins()).thenAnswer((_) async => [pin]);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
 
-        await syncService.deletePin(
-          pin: pin,
-          isAuthenticated: true,
-        );
+        await syncService.deletePin(pin: pin, isAuthenticated: true);
 
         verify(() => mockRepository.deletePin('server-pin')).called(1);
       });
@@ -201,47 +187,89 @@ void main() {
           isLocal: true,
         );
 
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => [pin]);
-        when(() => mockStorage.setLocalPins(any()))
-            .thenAnswer((_) async {});
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => [pin]);
+        when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
 
-        await syncService.deletePin(
-          pin: pin,
-          isAuthenticated: false,
-        );
+        await syncService.deletePin(pin: pin, isAuthenticated: false);
 
         verify(() => mockStorage.setLocalPins([])).called(1);
         verifyNever(() => mockRepository.deletePin(any()));
       });
 
-      test('should add to pending deletions when offline and server pin', () async {
+      test(
+        'should add to pending deletions when offline and server pin',
+        () async {
+          final pin = PinData(
+            id: 'server-pin',
+            userId: 'user-1',
+            position: const LatLng(35.6762, 139.6503),
+            createdAt: DateTime.utc(2024, 1, 15),
+            isLocal: false,
+          );
+
+          when(
+            () => mockNetworkChecker.isOnline,
+          ).thenAnswer((_) async => false);
+          when(
+            () => mockStorage.getCachedPins(),
+          ).thenAnswer((_) async => [pin]);
+          when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
+          when(
+            () => mockStorage.getPendingDeletions(),
+          ).thenAnswer((_) async => []);
+          when(
+            () => mockStorage.setPendingDeletions(any()),
+          ).thenAnswer((_) async {});
+
+          await syncService.deletePin(pin: pin, isAuthenticated: true);
+
+          verify(
+            () => mockStorage.setPendingDeletions(['server-pin']),
+          ).called(1);
+          verifyNever(() => mockRepository.deletePin(any()));
+        },
+      );
+    });
+
+    group('updatePinName', () {
+      test('should persist the name of a local pin', () async {
         final pin = PinData(
-          id: 'server-pin',
+          id: 'local-pin',
+          userId: null,
+          position: const LatLng(35.6762, 139.6503),
+          createdAt: DateTime.utc(2024, 1, 15),
+          isLocal: true,
+        );
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => [pin]);
+        when(() => mockStorage.getCachedPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
+
+        await syncService.updatePinName(pinId: pin.id, name: '公園');
+
+        final captured = verify(
+          () => mockStorage.setLocalPins(captureAny()),
+        ).captured;
+        expect((captured.single as List<PinData>).single.name, '公園');
+      });
+
+      test('should persist the name of a cached pin', () async {
+        final pin = PinData(
+          id: 'cached-pin',
           userId: 'user-1',
           position: const LatLng(35.6762, 139.6503),
           createdAt: DateTime.utc(2024, 1, 15),
           isLocal: false,
         );
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.getCachedPins()).thenAnswer((_) async => [pin]);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
 
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => false);
-        when(() => mockStorage.getCachedPins())
-            .thenAnswer((_) async => [pin]);
-        when(() => mockStorage.setCachedPins(any()))
-            .thenAnswer((_) async {});
-        when(() => mockStorage.getPendingDeletions())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.setPendingDeletions(any()))
-            .thenAnswer((_) async {});
+        await syncService.updatePinName(pinId: pin.id, name: '公園');
 
-        await syncService.deletePin(
-          pin: pin,
-          isAuthenticated: true,
-        );
-
-        verify(() => mockStorage.setPendingDeletions(['server-pin'])).called(1);
-        verifyNever(() => mockRepository.deletePin(any()));
+        final captured = verify(
+          () => mockStorage.setCachedPins(captureAny()),
+        ).captured;
+        expect((captured.single as List<PinData>).single.name, '公園');
       });
     });
 
@@ -258,22 +286,20 @@ void main() {
           ),
         ];
 
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => true);
-        when(() => mockStorage.getPendingDeletions())
-            .thenAnswer((_) async => pendingDeletions);
-        when(() => mockStorage.setPendingDeletions(any()))
-            .thenAnswer((_) async {});
-        when(() => mockRepository.deletePin(any()))
-            .thenAnswer((_) async {});
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.setLocalPins(any()))
-            .thenAnswer((_) async {});
-        when(() => mockRepository.getPins())
-            .thenAnswer((_) async => serverPins);
-        when(() => mockStorage.setCachedPins(any()))
-            .thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(
+          () => mockStorage.getPendingDeletions(),
+        ).thenAnswer((_) async => pendingDeletions);
+        when(
+          () => mockStorage.setPendingDeletions(any()),
+        ).thenAnswer((_) async {});
+        when(() => mockRepository.deletePin(any())).thenAnswer((_) async {});
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
+        when(
+          () => mockRepository.getPins(),
+        ).thenAnswer((_) async => serverPins);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
 
         await syncService.syncWithServer();
 
@@ -302,20 +328,21 @@ void main() {
           ),
         ];
 
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => true);
-        when(() => mockStorage.getPendingDeletions())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => localPins);
-        when(() => mockRepository.uploadLocalPins(localPins))
-            .thenAnswer((_) async => uploadedPins);
-        when(() => mockStorage.setLocalPins(any()))
-            .thenAnswer((_) async {});
-        when(() => mockRepository.getPins())
-            .thenAnswer((_) async => uploadedPins);
-        when(() => mockStorage.setCachedPins(any()))
-            .thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(
+          () => mockStorage.getPendingDeletions(),
+        ).thenAnswer((_) async => []);
+        when(
+          () => mockStorage.getLocalPins(),
+        ).thenAnswer((_) async => localPins);
+        when(
+          () => mockRepository.uploadLocalPins(localPins),
+        ).thenAnswer((_) async => uploadedPins);
+        when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
+        when(
+          () => mockRepository.getPins(),
+        ).thenAnswer((_) async => uploadedPins);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
 
         await syncService.syncWithServer();
 
@@ -324,6 +351,16 @@ void main() {
       });
 
       test('should update cached pins from server', () async {
+        final cachedPins = [
+          PinData(
+            id: 'pin-1',
+            userId: 'user-1',
+            position: const LatLng(35.6762, 139.6503),
+            createdAt: DateTime.utc(2024, 1, 15),
+            isLocal: false,
+            name: 'お気に入り',
+          ),
+        ];
         final serverPins = [
           PinData(
             id: 'pin-1',
@@ -334,25 +371,30 @@ void main() {
           ),
         ];
 
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => true);
-        when(() => mockStorage.getPendingDeletions())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => []);
-        when(() => mockRepository.getPins())
-            .thenAnswer((_) async => serverPins);
-        when(() => mockStorage.setCachedPins(serverPins))
-            .thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(
+          () => mockStorage.getPendingDeletions(),
+        ).thenAnswer((_) async => []);
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(
+          () => mockStorage.getCachedPins(),
+        ).thenAnswer((_) async => cachedPins);
+        when(
+          () => mockRepository.getPins(),
+        ).thenAnswer((_) async => serverPins);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
 
         await syncService.syncWithServer();
 
-        verify(() => mockStorage.setCachedPins(serverPins)).called(1);
+        final captured = verify(
+          () => mockStorage.setCachedPins(captureAny()),
+        ).captured;
+        final updatedPins = captured.single as List<PinData>;
+        expect(updatedPins.single.name, 'お気に入り');
       });
 
       test('should not sync when offline', () async {
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => false);
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => false);
 
         await syncService.syncWithServer();
 
@@ -361,20 +403,19 @@ void main() {
       });
 
       test('should handle deletion errors gracefully', () async {
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => true);
-        when(() => mockStorage.getPendingDeletions())
-            .thenAnswer((_) async => ['delete-1']);
-        when(() => mockRepository.deletePin('delete-1'))
-            .thenThrow(Exception('Server error'));
-        when(() => mockStorage.setPendingDeletions(['delete-1']))
-            .thenAnswer((_) async {});
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => []);
-        when(() => mockRepository.getPins())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.setCachedPins(any()))
-            .thenAnswer((_) async {});
+        when(() => mockNetworkChecker.isOnline).thenAnswer((_) async => true);
+        when(
+          () => mockStorage.getPendingDeletions(),
+        ).thenAnswer((_) async => ['delete-1']);
+        when(
+          () => mockRepository.deletePin('delete-1'),
+        ).thenThrow(Exception('Server error'));
+        when(
+          () => mockStorage.setPendingDeletions(['delete-1']),
+        ).thenAnswer((_) async {});
+        when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+        when(() => mockRepository.getPins()).thenAnswer((_) async => []);
+        when(() => mockStorage.setCachedPins(any())).thenAnswer((_) async {});
 
         // Should not throw
         await syncService.syncWithServer();
@@ -385,38 +426,38 @@ void main() {
     });
 
     group('edge cases', () {
-      test('offline add then delete should remove from local storage only', () async {
-        final position = const LatLng(35.6762, 139.6503);
+      test(
+        'offline add then delete should remove from local storage only',
+        () async {
+          final position = const LatLng(35.6762, 139.6503);
 
-        when(() => mockNetworkChecker.isOnline)
-            .thenAnswer((_) async => false);
+          when(
+            () => mockNetworkChecker.isOnline,
+          ).thenAnswer((_) async => false);
 
-        // First add pin offline
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => []);
-        when(() => mockStorage.setLocalPins(any()))
-            .thenAnswer((_) async {});
+          // First add pin offline
+          when(() => mockStorage.getLocalPins()).thenAnswer((_) async => []);
+          when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
 
-        final addedPin = await syncService.addPin(
-          position: position,
-          isAuthenticated: true,
-        );
+          final addedPin = await syncService.addPin(
+            position: position,
+            isAuthenticated: true,
+          );
 
-        // Verify pin was added locally
-        verify(() => mockStorage.setLocalPins(any())).called(1);
+          // Verify pin was added locally
+          verify(() => mockStorage.setLocalPins(any())).called(1);
 
-        // Now delete it while still offline
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => [addedPin]);
+          // Now delete it while still offline
+          when(
+            () => mockStorage.getLocalPins(),
+          ).thenAnswer((_) async => [addedPin]);
 
-        await syncService.deletePin(
-          pin: addedPin,
-          isAuthenticated: true,
-        );
+          await syncService.deletePin(pin: addedPin, isAuthenticated: true);
 
-        // Should not add to pending deletions since it was a local pin
-        verifyNever(() => mockStorage.setPendingDeletions(any()));
-      });
+          // Should not add to pending deletions since it was a local pin
+          verifyNever(() => mockStorage.setPendingDeletions(any()));
+        },
+      );
     });
 
     group('remapLocalMapIds', () {
@@ -440,17 +481,16 @@ void main() {
           ),
         ];
 
-        when(() => mockStorage.getLocalPins())
-            .thenAnswer((_) async => localPins);
-        when(() => mockStorage.setLocalPins(any()))
-            .thenAnswer((_) async {});
+        when(
+          () => mockStorage.getLocalPins(),
+        ).thenAnswer((_) async => localPins);
+        when(() => mockStorage.setLocalPins(any())).thenAnswer((_) async {});
 
-        await syncService.remapLocalMapIds({
-          'local-map-1': 'server-map-1',
-        });
+        await syncService.remapLocalMapIds({'local-map-1': 'server-map-1'});
 
-        final captured =
-            verify(() => mockStorage.setLocalPins(captureAny())).captured;
+        final captured = verify(
+          () => mockStorage.setLocalPins(captureAny()),
+        ).captured;
         final updatedPins = captured.last as List<PinData>;
 
         expect(updatedPins[0].mapId, 'server-map-1');
@@ -467,12 +507,11 @@ void main() {
 
     group('clearIfUserChanged', () {
       test('should clear local data when user signs out', () async {
-        when(() => mockStorage.getLastUserId())
-            .thenAnswer((_) async => 'user-1');
-        when(() => mockStorage.clearAll())
-            .thenAnswer((_) async {});
-        when(() => mockStorage.setLastUserId(null))
-            .thenAnswer((_) async {});
+        when(
+          () => mockStorage.getLastUserId(),
+        ).thenAnswer((_) async => 'user-1');
+        when(() => mockStorage.clearAll()).thenAnswer((_) async {});
+        when(() => mockStorage.setLastUserId(null)).thenAnswer((_) async {});
 
         await syncService.clearIfUserChanged(null);
 
@@ -480,25 +519,31 @@ void main() {
         verify(() => mockStorage.setLastUserId(null)).called(1);
       });
 
-      test('should clear local data when switching to different user', () async {
-        when(() => mockStorage.getLastUserId())
-            .thenAnswer((_) async => 'user-1');
-        when(() => mockStorage.clearAll())
-            .thenAnswer((_) async {});
-        when(() => mockStorage.setLastUserId('user-2'))
-            .thenAnswer((_) async {});
+      test(
+        'should clear local data when switching to different user',
+        () async {
+          when(
+            () => mockStorage.getLastUserId(),
+          ).thenAnswer((_) async => 'user-1');
+          when(() => mockStorage.clearAll()).thenAnswer((_) async {});
+          when(
+            () => mockStorage.setLastUserId('user-2'),
+          ).thenAnswer((_) async {});
 
-        await syncService.clearIfUserChanged('user-2');
+          await syncService.clearIfUserChanged('user-2');
 
-        verify(() => mockStorage.clearAll()).called(1);
-        verify(() => mockStorage.setLastUserId('user-2')).called(1);
-      });
+          verify(() => mockStorage.clearAll()).called(1);
+          verify(() => mockStorage.setLastUserId('user-2')).called(1);
+        },
+      );
 
       test('should not clear local data when user remains the same', () async {
-        when(() => mockStorage.getLastUserId())
-            .thenAnswer((_) async => 'user-1');
-        when(() => mockStorage.setLastUserId('user-1'))
-            .thenAnswer((_) async {});
+        when(
+          () => mockStorage.getLastUserId(),
+        ).thenAnswer((_) async => 'user-1');
+        when(
+          () => mockStorage.setLastUserId('user-1'),
+        ).thenAnswer((_) async {});
 
         await syncService.clearIfUserChanged('user-1');
 
@@ -506,23 +551,24 @@ void main() {
         verify(() => mockStorage.setLastUserId('user-1')).called(1);
       });
 
-      test('should not clear local data when signing in from unauthenticated state', () async {
-        when(() => mockStorage.getLastUserId())
-            .thenAnswer((_) async => null);
-        when(() => mockStorage.setLastUserId('user-1'))
-            .thenAnswer((_) async {});
+      test(
+        'should not clear local data when signing in from unauthenticated state',
+        () async {
+          when(() => mockStorage.getLastUserId()).thenAnswer((_) async => null);
+          when(
+            () => mockStorage.setLastUserId('user-1'),
+          ).thenAnswer((_) async {});
 
-        await syncService.clearIfUserChanged('user-1');
+          await syncService.clearIfUserChanged('user-1');
 
-        verifyNever(() => mockStorage.clearAll());
-        verify(() => mockStorage.setLastUserId('user-1')).called(1);
-      });
+          verifyNever(() => mockStorage.clearAll());
+          verify(() => mockStorage.setLastUserId('user-1')).called(1);
+        },
+      );
 
       test('should not clear local data when both are null', () async {
-        when(() => mockStorage.getLastUserId())
-            .thenAnswer((_) async => null);
-        when(() => mockStorage.setLastUserId(null))
-            .thenAnswer((_) async {});
+        when(() => mockStorage.getLastUserId()).thenAnswer((_) async => null);
+        when(() => mockStorage.setLastUserId(null)).thenAnswer((_) async {});
 
         await syncService.clearIfUserChanged(null);
 

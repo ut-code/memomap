@@ -6,7 +6,8 @@ import 'package:memomap/features/map/data/local_pin_storage.dart';
 import 'package:memomap/features/map/data/network_checker.dart';
 import 'package:memomap/features/map/data/pin_repository.dart';
 import 'package:memomap/features/map/providers/current_map_provider.dart';
-import 'package:memomap/features/map/providers/map_provider.dart' show mapIdMappingProvider;
+import 'package:memomap/features/map/providers/map_provider.dart'
+    show mapIdMappingProvider;
 import 'package:memomap/features/map/services/pin_sync_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -119,7 +120,9 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
       );
 
       state = AsyncValue.data(
-        state.value!.map((p) => p.id == optimisticPin.id ? realPin : p).toList(),
+        state.value!
+            .map((p) => p.id == optimisticPin.id ? realPin : p)
+            .toList(),
       );
     } catch (e, st) {
       if (kDebugMode) {
@@ -141,10 +144,7 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
     );
 
     try {
-      await syncService.deletePin(
-        pin: pin,
-        isAuthenticated: isAuthenticated,
-      );
+      await syncService.deletePin(pin: pin, isAuthenticated: isAuthenticated);
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('Failed to delete pin: $e\n$st');
@@ -168,6 +168,7 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
             position: p.position,
             createdAt: p.createdAt,
             isLocal: p.isLocal,
+            name: p.name,
             memo: memo,
           );
         }
@@ -181,6 +182,37 @@ class PinsNotifier extends AsyncNotifier<List<PinData>> {
     } catch (e, st) {
       if (kDebugMode) {
         debugPrint('Failed to persist memo: $e\n$st');
+      }
+    }
+  }
+
+  Future<void> updatePinName(String id, String name) async {
+    final current = state.value ?? [];
+    final normalizedName = name.trim().isEmpty ? 'ピン' : name.trim();
+    if (!current.any((pin) => pin.id == id)) return;
+
+    state = AsyncValue.data(
+      current.map((pin) {
+        if (pin.id != id) return pin;
+        return PinData(
+          id: pin.id,
+          userId: pin.userId,
+          mapId: pin.mapId,
+          position: pin.position,
+          createdAt: pin.createdAt,
+          isLocal: pin.isLocal,
+          name: normalizedName,
+          memo: pin.memo,
+        );
+      }).toList(),
+    );
+
+    try {
+      final syncService = await ref.read(pinSyncServiceProvider.future);
+      await syncService.updatePinName(pinId: id, name: normalizedName);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('Failed to persist pin name: $e\\n$st');
       }
     }
   }

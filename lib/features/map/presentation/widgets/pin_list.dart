@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:memomap/features/map/providers/pin_provider.dart';
 import 'package:memomap/features/map/providers/map_bounds_provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:memomap/features/map/presentation/widgets/pin_name_editor.dart';
 
 class PinList extends ConsumerWidget {
   const PinList({super.key, this.onSheetSizeChanged});
@@ -46,9 +47,10 @@ class PinList extends ConsumerWidget {
                       itemCount: pins.length,
                       itemBuilder: (context, index) {
                         final pin = pins[index];
-                        final isOutOfBounds = mapBounds != null && 
+                        final isOutOfBounds =
+                            mapBounds != null &&
                             !mapBounds.contains(pin.position);
-                        
+
                         return Dismissible(
                           key: ValueKey(pin),
                           onDismissed: (direction) {
@@ -73,7 +75,7 @@ class PinList extends ConsumerWidget {
                             leading: Image.asset('assets/pin.png'),
                             title: Row(
                               children: [
-                                const Text('ピン'),
+                                Flexible(child: Text(pin.name ?? 'ピン')),
                                 if (isOutOfBounds) ...[
                                   const SizedBox(width: 8),
                                   Container(
@@ -102,11 +104,20 @@ class PinList extends ConsumerWidget {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                pin.isLocal ? const Icon(Icons.cloud_off) : const Icon(Icons.cloud_outlined),
+                                pin.isLocal
+                                    ? const Icon(Icons.cloud_off)
+                                    : const Icon(Icons.cloud_outlined),
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined),
+                                  tooltip: '名前を編集',
+                                  onPressed: () =>
+                                      showPinNameEditor(context, ref, pin),
+                                ),
                                 IconButton(
                                   icon: const Icon(Icons.note_alt_outlined),
                                   tooltip: 'メモ',
-                                  onPressed: () => context.push('/pin/${pin.id}/memo'),
+                                  onPressed: () =>
+                                      context.push('/pin/${pin.id}/memo'),
                                 ),
                               ],
                             ),
