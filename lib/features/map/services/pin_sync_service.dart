@@ -26,34 +26,40 @@ class PinSyncService {
     required LatLng position,
     required bool isAuthenticated,
     String? mapId,
+    String? memo,
   }) async {
     if (!isAuthenticated) {
-      return _addLocalPin(position, mapId: mapId);
+      return _addLocalPin(position, mapId: mapId, memo: memo);
     }
 
     final isOnline = await networkChecker.isOnline;
     if (!isOnline) {
-      return _addLocalPin(position, mapId: mapId);
+      return _addLocalPin(position, mapId: mapId, memo: memo);
     }
 
     try {
-      final serverPin = await repository.addPin(position, mapId: mapId);
+      final serverPin =
+          await repository.addPin(position, mapId: mapId, memo: memo);
       if (serverPin != null) {
         final cachedPins = await storage.getCachedPins();
         await storage.setCachedPins([serverPin, ...cachedPins]);
         return serverPin;
       }
-      return _addLocalPin(position, mapId: mapId);
+      return _addLocalPin(position, mapId: mapId, memo: memo);
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to add pin to server: $e');
       }
-      return _addLocalPin(position, mapId: mapId);
+      return _addLocalPin(position, mapId: mapId, memo: memo);
     }
   }
 
-  Future<PinData> _addLocalPin(LatLng position, {String? mapId}) async {
-    final localPin = PinData.local(position, mapId: mapId);
+  Future<PinData> _addLocalPin(
+    LatLng position, {
+    String? mapId,
+    String? memo,
+  }) async {
+    final localPin = PinData.local(position, mapId: mapId, memo: memo);
     final localPins = await storage.getLocalPins();
     await storage.setLocalPins([localPin, ...localPins]);
     return localPin;
@@ -63,6 +69,13 @@ class PinSyncService {
     required PinData pin,
     required bool isAuthenticated,
   }) async {
+    final pendingUpdates = await storage.getPendingMemoUpdates();
+    if (pendingUpdates.containsKey(pin.id)) {
+      final newUpdates =
+          Map<String, String?>.from(pendingUpdates)..remove(pin.id);
+      await storage.setPendingMemoUpdates(newUpdates);
+    }
+
     if (pin.isLocal) {
       final localPins = await storage.getLocalPins();
       await storage.setLocalPins(
@@ -107,14 +120,7 @@ class PinSyncService {
     final localPins = await storage.getLocalPins();
     final updated = localPins.map((pin) {
       if (pin.mapId != null && idMapping.containsKey(pin.mapId)) {
-        return PinData(
-          id: pin.id,
-          userId: pin.userId,
-          mapId: idMapping[pin.mapId],
-          position: pin.position,
-          createdAt: pin.createdAt,
-          isLocal: pin.isLocal,
-        );
+        return pin.copyWith(mapId: idMapping[pin.mapId]);
       }
       return pin;
     }).toList();
@@ -126,6 +132,7 @@ class PinSyncService {
     if (!isOnline) return;
 
     await _processPendingDeletions();
+    await _processPendingMemoUpdates();
     await _uploadLocalPins();
     await _refreshCacheFromServer();
   }
@@ -150,6 +157,28 @@ class PinSyncService {
     await storage.setPendingDeletions(failedDeletions);
   }
 
+  Future<void> _processPendingMemoUpdates() async {
+    final pendingUpdates = await storage.getPendingMemoUpdates();
+    if (pendingUpdates.isEmpty) return;
+
+    final remainingUpdates = Map<String, String?>.from(pendingUpdates);
+
+    for (final entry in pendingUpdates.entries) {
+      final pinId = entry.key;
+      final memo = entry.value;
+      try {
+        await repository.updatePin(pinId, memo: memo);
+        remainingUpdates.remove(pinId);
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('Failed to update memo for pin $pinId: $e');
+        }
+      }
+    }
+
+    await storage.setPendingMemoUpdates(remainingUpdates);
+  }
+
   Future<void> _uploadLocalPins() async {
     final localPins = await storage.getLocalPins();
     if (localPins.isEmpty) return;
@@ -167,7 +196,18 @@ class PinSyncService {
   Future<void> _refreshCacheFromServer() async {
     try {
       final serverPins = await repository.getPins();
-      await storage.setCachedPins(serverPins);
+      final pendingUpdates = await storage.getPendingMemoUpdates();
+      if (pendingUpdates.isEmpty) {
+        await storage.setCachedPins(serverPins);
+      } else {
+        final mergedPins = serverPins.map((pin) {
+          if (pendingUpdates.containsKey(pin.id)) {
+            return pin.copyWith(memo: pendingUpdates[pin.id]);
+          }
+          return pin;
+        }).toList();
+        await storage.setCachedPins(mergedPins);
+      }
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Failed to refresh cache from server: $e');
@@ -175,55 +215,61 @@ class PinSyncService {
     }
   }
 
-  /// Update memo for a pin locally. This updates either local pins or cached pins
-  /// depending on where the pin exists. This is stored only on the client side
-  /// (no server update is attempted here).
-  Future<void> updatePinMemo({required String pinId, required String? memo}) async {
+  /// Update memo for a pin. If the pin is local, updates local storage.
+  /// If the pin is a server pin and the user is authenticated and online,
+  /// updates the server and cached storage. If offline or the server call fails,
+  /// updates cached storage and queues the update to be sent to the server later.
+  Future<void> updatePinMemo({
+    required String pinId,
+    required String? memo,
+    required bool isAuthenticated,
+  }) async {
     final localPins = await storage.getLocalPins();
-    final cachedPins = await storage.getCachedPins();
-
-    var updated = false;
-
-    final newLocal = localPins.map((pin) {
-      if (pin.id == pinId) {
-        updated = true;
-        return PinData(
-          id: pin.id,
-          userId: pin.userId,
-          mapId: pin.mapId,
-          position: pin.position,
-          createdAt: pin.createdAt,
-          isLocal: pin.isLocal,
-          memo: memo,
-        );
-      }
-      return pin;
-    }).toList();
-
-    if (updated) {
-      await storage.setLocalPins(newLocal);
+    final localIndex = localPins.indexWhere((p) => p.id == pinId);
+    if (localIndex != -1) {
+      final updatedLocal = List<PinData>.from(localPins);
+      updatedLocal[localIndex] = updatedLocal[localIndex].copyWith(memo: memo);
+      await storage.setLocalPins(updatedLocal);
       return;
     }
 
-    final newCached = cachedPins.map((pin) {
-      if (pin.id == pinId) {
-        updated = true;
-        return PinData(
-          id: pin.id,
-          userId: pin.userId,
-          mapId: pin.mapId,
-          position: pin.position,
-          createdAt: pin.createdAt,
-          isLocal: pin.isLocal,
-          memo: memo,
-        );
+    final isOnline = await networkChecker.isOnline;
+    if (isAuthenticated && isOnline) {
+      try {
+        final serverPin = await repository.updatePin(pinId, memo: memo);
+        final cachedPins = await storage.getCachedPins();
+        final cachedIndex = cachedPins.indexWhere((p) => p.id == pinId);
+        if (cachedIndex != -1) {
+          final updatedCached = List<PinData>.from(cachedPins);
+          updatedCached[cachedIndex] =
+              serverPin ?? updatedCached[cachedIndex].copyWith(memo: memo);
+          await storage.setCachedPins(updatedCached);
+        }
+        final pendingUpdates = await storage.getPendingMemoUpdates();
+        if (pendingUpdates.containsKey(pinId)) {
+          final newUpdates =
+              Map<String, String?>.from(pendingUpdates)..remove(pinId);
+          await storage.setPendingMemoUpdates(newUpdates);
+        }
+        return;
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('Failed to update pin memo on server: $e');
+        }
       }
-      return pin;
-    }).toList();
-
-    if (updated) {
-      await storage.setCachedPins(newCached);
     }
+
+    final cachedPins = await storage.getCachedPins();
+    final cachedIndex = cachedPins.indexWhere((p) => p.id == pinId);
+    if (cachedIndex != -1) {
+      final updatedCached = List<PinData>.from(cachedPins);
+      updatedCached[cachedIndex] =
+          updatedCached[cachedIndex].copyWith(memo: memo);
+      await storage.setCachedPins(updatedCached);
+    }
+    final pendingUpdates = await storage.getPendingMemoUpdates();
+    final newUpdates = Map<String, String?>.from(pendingUpdates)..[pinId] = memo;
+    await storage.setPendingMemoUpdates(newUpdates);
   }
 
   Future<void> clearIfUserChanged(String? currentUserId) async {

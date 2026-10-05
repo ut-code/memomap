@@ -31,6 +31,7 @@ import {
 	HealthSchema,
 	PinSchema,
 	PinsArraySchema,
+	UpdatePinSchema,
 	UserSchema,
 } from "./schemas/pin";
 
@@ -259,9 +260,7 @@ app.post(
 		const userId = c.get("userId");
 		const body = c.req.valid("json");
 
-		if (
-			!(await validateMapOwnership(c.env.DATABASE_URL, body.mapId, userId))
-		) {
+		if (!(await validateMapOwnership(c.env.DATABASE_URL, body.mapId, userId))) {
 			return c.json({ error: "Map not found" }, 404);
 		}
 
@@ -274,6 +273,7 @@ app.post(
 						mapId: body.mapId ?? null,
 						latitude: body.latitude,
 						longitude: body.longitude,
+						memo: body.memo ?? null,
 					})
 					.returning(),
 			);
@@ -282,6 +282,75 @@ app.post(
 		} catch (error) {
 			console.error("Failed to add pin:", error);
 			return c.json({ error: "Failed to add pin" }, 500);
+		}
+	},
+);
+
+app.put(
+	"/api/pins/:id",
+	describeRoute({
+		tags: ["pins"],
+		summary: "Update a pin",
+		responses: {
+			200: {
+				description: "Pin updated",
+				content: { "application/json": { schema: resolver(PinSchema) } },
+			},
+			400: {
+				description: "Invalid request",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			401: {
+				description: "Unauthorized",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			404: {
+				description: "Pin not found",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+			500: {
+				description: "Internal server error",
+				content: { "application/json": { schema: resolver(ErrorSchema) } },
+			},
+		},
+	}),
+	authMiddleware,
+	validator("json", UpdatePinSchema),
+	async (c) => {
+		const userId = c.get("userId");
+		const pinId = c.req.param("id");
+		const body = c.req.valid("json");
+
+		if (!pinId || !/^[0-9a-f-]{36}$/i.test(pinId)) {
+			return c.json({ error: "Invalid pin ID" }, 400);
+		}
+
+		try {
+			const updateData: {
+				memo?: string | null;
+			} = {};
+			if (body.memo !== undefined) updateData.memo = body.memo;
+
+			if (Object.keys(updateData).length === 0) {
+				return c.json({ error: "No fields to update" }, 400);
+			}
+
+			const [data] = await withDb(c.env.DATABASE_URL, (db) =>
+				db
+					.update(pins)
+					.set(updateData)
+					.where(and(eq(pins.id, pinId), eq(pins.userId, userId)))
+					.returning(),
+			);
+
+			if (!data) {
+				return c.json({ error: "Pin not found" }, 404);
+			}
+
+			return c.json(data);
+		} catch (error) {
+			console.error("Failed to update pin:", error);
+			return c.json({ error: "Failed to update pin" }, 500);
 		}
 	},
 );
@@ -373,6 +442,7 @@ app.post(
 			mapId: pin.mapId ?? null,
 			latitude: pin.latitude,
 			longitude: pin.longitude,
+			memo: pin.memo ?? null,
 		}));
 
 		try {
@@ -463,9 +533,7 @@ app.post(
 		const userId = c.get("userId");
 		const body = c.req.valid("json");
 
-		if (
-			!(await validateMapOwnership(c.env.DATABASE_URL, body.mapId, userId))
-		) {
+		if (!(await validateMapOwnership(c.env.DATABASE_URL, body.mapId, userId))) {
 			return c.json({ error: "Map not found" }, 404);
 		}
 
